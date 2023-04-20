@@ -3,22 +3,24 @@ title: "WY Lake Sediment Prokaryotic Community Analyses"
 author: "Jordan Von Eggers"
 date: "20 Apr 2023"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 #request resources in Beartooth
+
 ```{bash}
 salloc --mem=110GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
 ```
 
-General notes:
-- Round lake didn’t have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn’t too much different (around 20 deg C), so I used 20.1 as the temperature
-- mV for sample SR0122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) – but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something
-- Only one truly replicated sample (LB0208L1 and LB0208L2)
+General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR0122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
 
-# Part I: Grab files off Beartooth supercomputer and assign taxonomy
+# Part I: Extract files and assign taxonomy
 
-copy the bash file used to make the files above! (from Alex Buerkle)
-move to folder: /Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton
+## 1. Grab files off Beartooth supercomputer
+
+copy the bash file used to make the files above! (from Alex Buerkle) move to folder: /Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton
+
 ```{bash}
 rsync jvonegge@teton.uwyo.edu:/project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/run_slurm_mkotu.pl /Users/jordanscheibe/Desktop
 
@@ -42,20 +44,17 @@ foreach my $tfmdirectory (sort keys %allprojectsotu){
 
 ```
 
+copy orginal files from the Micro Project to my folders but just grab: 1. otutable.esv 2. zotus_nonchimeric.fa
 
-copy orginal files from the Micro Project to my folders
-but just grab:
-1. otutable.esv
-2. zotus_nonchimeric.fa
 ```{bash}
 cd /project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
 cp * /project/seddna/jvonegge/WY_lake_microbes/16S/original_files
 ```
+
 move all the other files aside from those two into an "other" folder
 
+copy in just the fasta version of the SILVA 138.1 database (the NR99 that is recommended) because ARB is really hard to install and probably unnecessary Additionally, this includes version uses a combination of SILVA and GTDB
 
-copy in just the fasta version of the SILVA 138.1 database (the NR99 that is recommended) because ARB is really hard to install and probably unnecessary
-Additionally, this includes version uses a combination of SILVA and GTDB
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
 
@@ -63,37 +62,52 @@ rsync /Users/jordanscheibe/Desktop/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz jv
 gunzip SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
 ```
 
+## 2. Assigning taxonomy
 
-Assigning taxonomy was done with the following code in Beartooth
+done with the following code in Beartooth
 
-assign_tax.sh is using this uniqueOTUs_16s.fa file
+<!-- assign_tax.sh is using this uniqueOTUs_16s.fa file -->
 
+<!-- ```{bash} -->
 
-```{bash}
-cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa
-```
+<!-- cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa -->
 
-assign_tax.sh
-```{bash}
-#!/bin/bash
-#SBATCH --job-name assign_taxonomy
-#SBATCH --mem=110GB
-#SBATCH --time=3:00:00
-#SBATCH --cpus-per-task=32
-#SBATCH --account=microbiome
-#SBATCH --output=assign_taxonomy_%A.out
+<!-- ``` -->
 
-module load arcc/1.0  gcc/12.2.0
-module load vsearch/2.22.1
+<!-- assign_tax.sh -->
 
-vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32
+<!-- ```{bash} -->
 
-echo "vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32"
-```
+<!-- #!/bin/bash -->
 
-assign_tax_zotus.sh uses the zotus_nonchimeric.fa file that was dereplicated a second time and then added this additional number in the centroid rather than OTU number.. I want to use this one if I can. 
+<!-- #SBATCH --job-name assign_taxonomy -->
+
+<!-- #SBATCH --mem=110GB -->
+
+<!-- #SBATCH --time=3:00:00 -->
+
+<!-- #SBATCH --cpus-per-task=32 -->
+
+<!-- #SBATCH --account=microbiome -->
+
+<!-- #SBATCH --output=assign_taxonomy_%A.out -->
+
+<!-- module load arcc/1.0  gcc/12.2.0 -->
+
+<!-- module load vsearch/2.22.1 -->
+
+<!-- vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32 -->
+
+<!-- echo "vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32" -->
+
+<!-- ``` -->
+
+<!-- Classified 121269 of 123905 sequences (97.87%) -->
+
+assign_tax_zotus.sh uses the zotus_nonchimeric.fa file that was dereplicated a second time and then added this additional number in the centroid rather than OTU number.. I want to use this one.
 
 assign_tax_zotus.sh
+
 ```{bash}
 #!/bin/bash
 #SBATCH --job-name assign_taxonomy_zotus
@@ -111,21 +125,37 @@ vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURe
 echo "vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S_zotus.txt -strand both -sintax_cutoff 0.8 -threads 32"
 ```
 
+Classified 121265 of 123908 sequences (97.87%)
 
+copy just this taxonomy_16S_zotus.txt onto my computer along with the other esv table file we need
 
-#LEFT OFF HERE
+```{bash}
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
 
-        
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S_zotus.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
+#this file comes back as empty...
+
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/original_files/otutable.esv /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
+```
+
 # Part 2: Data Cleaning
+
 note: if going to rerun, make sure that there continues to have the object 'lessthan1' be 'integer (empty)' on lines 869, 1068 and 1206
 
 ## 1. remove unassigned, or incorrect OTUs
 
 ### a. read in taxa table
+
 ```{r}
 require(stringr)
 require(dplyr)
-tax_tab_silva <- as.matrix(read.table("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton/taxonomy_16S_silvav123.txt", header=F, row.names=1, check.names=F, na.strings="", sep="\t"))
+tax_tab_silva <- as.matrix(read.table("taxonomy_16S_zotus.txt", header=F, row.names=1, check.names=F, na.strings="", sep="\t"))
+
+test<-read.table("taxonomy_16S_zotus.txt")
+
+tax_tab_silva <- as.matrix(read.table("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/WYLakeSedMicrobes/Calder_vsearch/16S/original files off Teton/taxonomy_16S_silvav123.txt", header=F, row.names=1, check.names=F, na.strings="", sep="\t"))
+
+
 #wrangle names of tax table to only include centroid ID
 #split the rownames by ";" and pull out only the "centroidXXX" info. 
 tax_names<-str_split(rownames(tax_tab_silva),pattern = ";", 3, simplify = T)[,1]
@@ -185,6 +215,7 @@ rm(tax_names)
 ```
 
 ### b. remove unassigned domain, chloroplast, and mitochondira
+
 ```{r}
 #unassigned taxa at the domain level (column 1)
 table(is.na(tax_tab_silva[,1]))
@@ -260,14 +291,14 @@ rm(unassigned_domain)
 ```
 
 ### @count_track
+
 ```{r}
 nrow(tax_tab_silva)
 # [1] 119879 - Aug29
 ```
 
-
-
 ### c. remove : in taxomony table
+
 ```{r}
 require(rlist)
 newframe<-list()
@@ -297,11 +328,12 @@ table(colnames(taxa_tab)==colnames(tax_tab_silva))
 
 rm(tax_tab_silva)
 ```
+
 cleaned taxa table (from NAs, chloroplast and mitochondria, with the colons removed is now called taxa_tab)
 
 ## 2. read in OTU table
-from folder on Teton, now Beartooth
-/project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder 
+
+from folder on Teton, now Beartooth /project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
 
 ```{r}
 otu_table<-read.delim("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
@@ -316,95 +348,9 @@ otu_table$OTUID<-NULL
 ```
 
 ### a. sed only and remove samples
-1. remove all water samples
-H24blank
-H3BL00_3
-H59BL01_1
-H6BL01_3
-H64BL00_1
-H66BL00_2
-H67BL07_2
-H7BL01_3
-H70BL10_2
-H72BL10_1
-H73BL07_1
-H74BL01_2
-H9BL10_3
-H29CL00_1
-H31CL01_2
-H34CL01_1
-H35CL07_3
-H36CL07_2
-H43CL00_3
-H46CL16_1
-H48CL00_2
-H51CL16_3
-H55CL16_2
-H61CL01_3
-H65CL07_1
-H11EG03_3
-H12EG01_2
-H13EG00_1
-H14EG06_2
-H15EG00_3
-H16EG01_3
-H17EG01_1
-H18EG03_2
-H19EG06_3
-H20EG00_2
-H21EG03_1
-H22EG06_1
-H5HL00_1
-H10HW00_1
-H4LW00_1
-H68LL00_2
-H38LO08_3
-H39LO08_1
-H40LO01_3
-H44LO08_2
-H45LO01_3
-H50LO05_1
-H52LO00_3
-H53LO05_3
-H54LO05_2
-H56LO00_1
-H57LO01_1
-H69LO00_2
-H2LS00_1
-H58ML00_2
-H1RL00_1
-H25SV06_3
-H28SV04_2
-H30SV01_3
-H32SV00_1
-H33SV04_1
-H41SV04_3
-H47SV00_3
-H49SV01_1
-H60SV01_2
-H62SV06_1
-H63SV00_2
-H71SV06_2
-H26SR00_1
-H23SG10_1
-H27SG00_1
-H37SG01_1
-H42SG15_1
-2. remove samples that should not have been included
-RL0100L2 #should not have been sequenced
-RL0104L #should not have been sequenced
-SM0100L #private land, cannot include
-SM0104L #private land, cannot include
-SV0100L #should not have sequenced first core
-SV0104L #should not have sequenced first core
-TL0100L2 #biased productivity (near septic)
-TL0104L #biased productivity (near septic)
-LL0404L #out of order since core starts at 38 cm
-LW0100 # duplicated sample, clearly wrong
-LWL0104L #sampled poorly 2017, should not have been sequenced
-LWL100L #sampled poorly 2017, should not have been sequenced
 
-        
+1.  remove all water samples H24blank H3BL00_3 H59BL01_1 H6BL01_3 H64BL00_1 H66BL00_2 H67BL07_2 H7BL01_3 H70BL10_2 H72BL10_1 H73BL07_1 H74BL01_2 H9BL10_3 H29CL00_1 H31CL01_2 H34CL01_1 H35CL07_3 H36CL07_2 H43CL00_3 H46CL16_1 H48CL00_2 H51CL16_3 H55CL16_2 H61CL01_3 H65CL07_1 H11EG03_3 H12EG01_2 H13EG00_1 H14EG06_2 H15EG00_3 H16EG01_3 H17EG01_1 H18EG03_2 H19EG06_3 H20EG00_2 H21EG03_1 H22EG06_1 H5HL00_1 H10HW00_1 H4LW00_1 H68LL00_2 H38LO08_3 H39LO08_1 H40LO01_3 H44LO08_2 H45LO01_3 H50LO05_1 H52LO00_3 H53LO05_3 H54LO05_2 H56LO00_1 H57LO01_1 H69LO00_2 H2LS00_1 H58ML00_2 H1RL00_1 H25SV06_3 H28SV04_2 H30SV01_3 H32SV00_1 H33SV04_1 H41SV04_3 H47SV00_3 H49SV01_1 H60SV01_2 H62SV06_1 H63SV00_2 H71SV06_2 H26SR00_1 H23SG10_1 H27SG00_1 H37SG01_1 H42SG15_1
+2.  remove samples that should not have been included RL0100L2 #should not have been sequenced RL0104L #should not have been sequenced SM0100L #private land, cannot include SM0104L #private land, cannot include SV0100L #should not have sequenced first core SV0104L #should not have sequenced first core TL0100L2 #biased productivity (near septic) TL0104L #biased productivity (near septic) LL0404L #out of order since core starts at 38 cm LW0100 \# duplicated sample, clearly wrong LWL0104L #sampled poorly 2017, should not have been sequenced LWL100L #sampled poorly 2017, should not have been sequenced
 
 ```{r}
 require(stringr)
@@ -543,13 +489,10 @@ rm(otu_table_backup) #delete backup
 
 ```
 
-
 ### @count_track
-starting, with chloroplast, mitochondria, and NAs included
-no water, or samples that shouldn't have been sequenced
-11 blanks included here - not the water blank (that was removed)
-removed OTUS with no reads
-updated 29 aug 2022
+
+starting, with chloroplast, mitochondria, and NAs included no water, or samples that shouldn't have been sequenced 11 blanks included here - not the water blank (that was removed) removed OTUS with no reads updated 29 aug 2022
+
 ```{r}
 #starting number of reads in the OTU table including blanks
 sum(colSums(otu_table))
@@ -584,9 +527,7 @@ nrow(otu_table)
 
 ```
 
-added this september 2nd to calculate: 
-total number of reads (blanks removed), kept mitochondria, chloroplast and NAs
-also for reads per sample (555 samples without blanks)
+added this september 2nd to calculate: total number of reads (blanks removed), kept mitochondria, chloroplast and NAs also for reads per sample (555 samples without blanks)
 
 !!!did not keep this going forward, skip this section if rerunning!!!!
 
@@ -667,9 +608,8 @@ rm(num_read)
 
 ```
 
-
-
 ### b. remove OTUs that were removed from the taxonomy table
+
 ```{r}
 keep<-rownames(taxa_tab)
 otus<-rownames(otu_table)
@@ -688,8 +628,9 @@ rm(otu_table2)
 ```
 
 ### @count_track
-otu table with blanks and chloroplast/mitochondria/domainNA removed as wel as water and bad samples, blanks kept
-updated aug 29, 2022
+
+otu table with blanks and chloroplast/mitochondria/domainNA removed as wel as water and bad samples, blanks kept updated aug 29, 2022
+
 ```{r}
 #number of reads in the OTU table including blanks
 sum(colSums(otu_table))
@@ -707,9 +648,10 @@ ncol(otu_table)
 
 ```
 
-
 ### c. remove blanks to assess reads
+
 updated 29 aug 2022
+
 ```{r}
 #initiate object to store column number containing blanks
 blanks<- c()
@@ -747,7 +689,9 @@ rm(blank_reads)
 ```
 
 ### @count_track (blanks and OTU with blanks removed before further filtering) - this is without chloroplast/NA/mitochondira
+
 updated aug 29, 2022
+
 ```{r}
 #otu table with blanks removed
 #total reads
@@ -784,13 +728,12 @@ rm(num_read)
 
 ```
 
-
 ## 3. remove OTUs with low reads
-at this point you should just have the two data frames in your environment:
-1. taxa_tab
-2. otu_table (taxonomy filtered, water and bad samples removed, blanks included)
+
+at this point you should just have the two data frames in your environment: 1. taxa_tab 2. otu_table (taxonomy filtered, water and bad samples removed, blanks included)
 
 ### a. plot otus per read count
+
 ```{r}
 #do on otu_table with blanks, with taxonomy filtering done on otu table
 reads_per_otu<-as.data.frame(rowSums(otu_table))
@@ -818,11 +761,13 @@ dev.off()
 rm(table_no.out_per.read)
 rm(reads_per_otu)
 ```
+
 Decision: remove OTUs with less than 10 reads calculate number of OTUs and reads
 
 ### b. remove otus with low reads & @count_track
-Chose 10 reads, citation: 
-Urrutia-Cordero, P., Langenheder, S., Striebel, M., Eklöv, P., Angeler, D. G., Bertilsson, S., … Hillebrand, H. (2021). Functionally reversible impacts of disturbances on lake food webs linked to spatial and seasonal dependencies. Ecology, 102(4). https://doi.org/10.1002/ecy.3283
+
+Chose 10 reads, citation: Urrutia-Cordero, P., Langenheder, S., Striebel, M., Eklöv, P., Angeler, D. G., Bertilsson, S., ... Hillebrand, H. (2021). Functionally reversible impacts of disturbances on lake food webs linked to spatial and seasonal dependencies. Ecology, 102(4). <https://doi.org/10.1002/ecy.3283>
+
 ```{r}
 # output values for unpruned otu table with blanks
 reads_per_otu<-as.data.frame(rowSums(otu_table))
@@ -855,6 +800,7 @@ rm(otu_table_10)
 ```
 
 ### c. plot reads by OTUs for each sample
+
 ```{r}
 #for filtered otu table - not pruned (otu_table)
 #calculate number of reads per sample
@@ -892,14 +838,15 @@ rm(reads)
 rm(tmp3)
 
 ```
-Note - this suggest that I should normalizing (verses pruning at something like 500 or more) since the number of OTUs increases with then number of reads. 
 
-
+Note - this suggest that I should normalizing (verses pruning at something like 500 or more) since the number of OTUs increases with then number of reads.
 
 ## 4. remove samples with low reads
 
 ### a. plot number of reads per sample
+
 updated 22 Aug 2022
+
 ```{r}
 ### with blanks and otus with less than 10 reads removed and taxonomy filtered####
 num_read<-as.data.frame(colSums(otu_table))
@@ -953,8 +900,8 @@ dev.off()
 
 ```
 
-numbers of samples lost with pruning
-reran aug 22, 2022
+numbers of samples lost with pruning reran aug 22, 2022
+
 ```{r}
 
 #this is with the blanks included, OTUs with less than 10 reads removed, and taxonomy filtering
@@ -976,9 +923,10 @@ length(num_read[num_read$reads<100,]$reads)
 rm(num_read)
 ```
 
+### b. prune samples \@ 100
 
-### b. prune samples @ 100
 choice is to remove samples with less than 100 reads
+
 ```{r}
 # Rerun the number of reads per sample using the OTU table with blanks included (otu_table)
 num_read<-as.data.frame(colSums(otu_table))
@@ -1025,7 +973,9 @@ rm(num_read)
 ```
 
 ### @count_track
+
 updated 29 aug 2022
+
 ```{r}
 #reads in pruned otu table
 sum(colSums(otu_table))
@@ -1039,11 +989,12 @@ ncol(otu_table)
 
 ```
 
-
 ## 5. correlate technical replicates
 
 ### a. correlate technical replicates
+
 this chunk of code you put in the otu table you want to try with and then rerun for each variation.
+
 ```{r}
 otu_tab_derep <- otu_table
 
@@ -1094,10 +1045,10 @@ rm(otu_tab_derep)
 
 ### b. look at samples individually
 
-I did this once, and the results are in an excel file, from there, I selected the samples that needed to be removed after summing technical replicates! 
+I did this once, and the results are in an excel file, from there, I selected the samples that needed to be removed after summing technical replicates!
 
-for reads correlated less than 70%, kept samples whose smaller reads were less than 25% of the greater reads
-updated 29 aug 2022
+for reads correlated less than 70%, kept samples whose smaller reads were less than 25% of the greater reads updated 29 aug 2022
+
 ```{r}
 tmp <- otu_table
 
@@ -1126,28 +1077,12 @@ rm(low_cor_samp)
 rm(samp_names)
 ```
 
-sample1	sample2	correlation	reads1	reads2	percent
-33_1_0_DNA	33_1_0_DNA	0.41812768	324	1322	25%
-35_2_6_DNA	35_2_6_DNA	0.66788087	447	1040	43%
-37_1_2_DNA	37_1_2_DNA	0.52398164	104	521	20%
-39_1_18_DNA	39_1_18_DNA	0.31364043	164	652	25%
-44_1_12_DNA	44_1_12_DNA	0.64393483	161	132952	0%
-46_1_2_DNA	46_1_2_DNA	0.69341167	155	168144	0%
-BL0126L	BL0126L	0.52864848	348	3941	9%
-BL0132L	BL0132L	0.61811876	150	16985	1%
-FB0104L	FB0104L	0.34169897	204	283	72%
-LB0212L	LB0212L	0.54820268	114	545	21%
-LL0104L	LL0104L	0.11559503	129	160	81%
-LL0112L	LL0112L	0.53879839	114	287	40%
-LS0120L	LS0120L	0.06579572	49014	53193	92%
-SR0102L	SR0102L	0.58216221	420	676	62%
-SR0104L	SR0104L	0.36381059	159	1577	10%
-SR0114L	SR0114L	0.66456196	239	23419	1%
-SV0408L	SV0408L	0.5970406	229	235	97%
-
+sample1 sample2 correlation reads1 reads2 percent 33_1\_0_DNA 33_1\_0_DNA 0.41812768 324 1322 25% 35_2\_6_DNA 35_2\_6_DNA 0.66788087 447 1040 43% 37_1\_2_DNA 37_1\_2_DNA 0.52398164 104 521 20% 39_1\_18_DNA 39_1\_18_DNA 0.31364043 164 652 25% 44_1\_12_DNA 44_1\_12_DNA 0.64393483 161 132952 0% 46_1\_2_DNA 46_1\_2_DNA 0.69341167 155 168144 0% BL0126L BL0126L 0.52864848 348 3941 9% BL0132L BL0132L 0.61811876 150 16985 1% FB0104L FB0104L 0.34169897 204 283 72% LB0212L LB0212L 0.54820268 114 545 21% LL0104L LL0104L 0.11559503 129 160 81% LL0112L LL0112L 0.53879839 114 287 40% LS0120L LS0120L 0.06579572 49014 53193 92% SR0102L SR0102L 0.58216221 420 676 62% SR0104L SR0104L 0.36381059 159 1577 10% SR0114L SR0114L 0.66456196 239 23419 1% SV0408L SV0408L 0.5970406 229 235 97%
 
 ### c. sum technical replicates
+
 Only the ones that have good correlation, taxonomy filtered, otus with less than 10 reads removed, samples with less than 100 reads removed
+
 ```{r}
 
 otu_tab_derep <- otu_table
@@ -1222,8 +1157,8 @@ rm(summed_otu_table)
 
 ```
 
-
 ## 6. remove blanks
+
 In this, since most of the blanks were removed, there would only be one blank used to do decontamination (if we rarefied at around 10k again)
 
 ```{r}
@@ -1271,14 +1206,9 @@ rm(blank_reads)
 ```
 
 ### @count_track
-removed blank reads
-this is: before normalization
-1. mictochondria/chloroplast/NA removed
-2. OTUs with less than 10 reads removed
-3. samples with less than 100 reads removed
-4. technical replicates correlated and summed
-5. blanks removed
-updated 29 aug 2022
+
+removed blank reads this is: before normalization 1. mictochondria/chloroplast/NA removed 2. OTUs with less than 10 reads removed 3. samples with less than 100 reads removed 4. technical replicates correlated and summed 5. blanks removed updated 29 aug 2022
+
 ```{r}
 sum(colSums(otu_table))
 nrow(otu_table)
@@ -1292,7 +1222,9 @@ ncol(otu_table)
 ```
 
 ## 7. Write OTU and taxa CSVs before normalization
+
 updated 29 aug 2022
+
 ```{r}
 # write.csv(otu_table,file="otu_table_notnorm_29Aug2022.csv",row.names = T)
 # write.csv(taxa_tab,file="tax_tab_notnorm_29Aug2022.csv",row.names = T)
@@ -1300,11 +1232,10 @@ updated 29 aug 2022
 # save.image("WyLakeMicrobes_otu_tax_notnorm_env_29Aug2022.RData")
 ```
 
-
 ## 8. normalize
-using the rrarefy() function: 
-Function rrarefy generates one randomly rarefied community data frame or vector of given sample size. The sample can be a vector giving the sample sizes for each row. If the sample size is equal to or smaller than the observed number of individuals, the non-rarefied community will be returned. The random rarefaction is made without replacement so that the variance of rarefied communities is rather related to rarefaction proportion than to the size of the sample.
-updated 29 aug 2022
+
+using the rrarefy() function: Function rrarefy generates one randomly rarefied community data frame or vector of given sample size. The sample can be a vector giving the sample sizes for each row. If the sample size is equal to or smaller than the observed number of individuals, the non-rarefied community will be returned. The random rarefaction is made without replacement so that the variance of rarefied communities is rather related to rarefaction proportion than to the size of the sample. updated 29 aug 2022
+
 ```{r}
 require(vegan)
 
@@ -1407,7 +1338,8 @@ rm(rrare)
 # save.image("WyLakeMicrobes_otu_tax_10knorm_env_29Aug2022.RData")
 ```
 
-### @ count_track rarefied_final
+### \@ count_track rarefied_final
+
 ```{r}
 (sum(colSums(otu_tab_10knorm)))
 nrow(otu_tab_10knorm)
@@ -1424,10 +1356,10 @@ ncol(otu_tab_10knorm)
 #[1] 0.7510127
 ```
 
-
-
 ### a. ordinate and procrustes
+
 reran 29 aug 2022
+
 ```{r}
 require(vegan)
 #compared samples greater than 10,000 reads (otu_normalize_10000) and the rarefied or normalized object (final_normalized)
@@ -1468,10 +1400,10 @@ rm(otu_table)
 
 ```
 
-
-
 # Part III: Create Phyloseq
+
 ## 1. Update and save the metadata file
+
 ```{r}
 #update the EG sample name
 metadata<-read.csv("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/Wy Lake Microbes_old/Metadata_30July2022.csv",header=T,row.names=1)
@@ -1521,6 +1453,7 @@ sort(unique(metadata$bin_depth))
 ```
 
 ## 2. Make phyloseq
+
 ```{r}
 load("WyLakeMicrobes_otu_tax_10knorm_env_29Aug2022.RData")
 metadata<-read.csv("metadata_29Aug2022.csv",header=T,row.names = 1)
@@ -1566,21 +1499,24 @@ ps_tr <- transform_sample_counts(ps, function(x) x / sum(x))
 #save.image("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 ```
 
-
 # Part III: Data Analysis
 
 ## 0. password
+
 ```{bash}
 PrayingMantus@0613@
 ```
 
 ## 1. Load data
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 ```
 
-## 2. Stats for manuscript 
+## 2. Stats for manuscript
+
 Updated Sept 2, 2022
+
 ```{r}
 # what is the total number of cores and lakes?
 length(unique(metadata$lake_id)) # 36 lakes
@@ -1831,9 +1767,10 @@ metadata_sub[which(is.na(metadata_sub[3]==T)),]
 ggpairs(metadata_sub)
 ```
 
-
 ## 3. Null models (BNTI and RCBray)
+
 ### a. Phylogenetic tree
+
 create Phylogenetic tree on Teton
 
 ```{r}
@@ -1865,6 +1802,7 @@ write_lines(all$item,file = "sed_norm_fasta_29Aug2022.txt")
 ```
 
 on teton copy the file over
+
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/sed_norm_fasta_29Aug2022.txt jvonegge@teton.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree
 
@@ -1872,9 +1810,8 @@ rsync /Users/jordanscheibe/Desktop/sed_norm_fasta_29Aug2022.txt jvonegge@teton.u
 mv sed_norm_fasta_29Aug2022.txt sed_norm_fasta_29Aug2022.fa
 ```
 
+create bash file for muscle and fastTree clustalo_fasttree.sh
 
-create bash file for muscle and fastTree
-clustalo_fasttree.sh
 ```{bash}
 #!/bin/bash
 #SBATCH --job-name clustalo_fasttree
@@ -1897,7 +1834,9 @@ echo "finished FastTree"
 source deactivate shotgun_env
 date
 ```
-copy to computer 
+
+copy to computer
+
 ```{bash}
 rsync jvonegge@teton.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/sed_norm_fasta_29Aug2022_muscled.nwk /Users/jordanscheibe/Desktop/
 ```
@@ -1907,6 +1846,7 @@ rsync jvonegge@teton.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phyl
 ### i. subset by the top 10K ESVs
 
 ps and ps_tr (transformed) are very similar, so I use the ESVs from ps_tr since thats likely more accurate, and then subset from the ps (untransformed table)
+
 ```{r}
 require(ape)
 #how many samples greater than 26 cm
@@ -1986,6 +1926,7 @@ rm(tax_tab)
 ```
 
 copy to Teton server
+
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/WyLakeMicrobes_env_30Aug2022_fortetonBNTI_bindepthcentroids_10888ESVs.RData jvonegge@teton.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/BNTI
 
@@ -2018,8 +1959,8 @@ echo "finished BNTI"
 date
 ```
 
-
 ## c. RCBray on Teton
+
 ```{r}
 RC_Bray_Wisnoski.R
 load("WyLakeMicrobes_env_30Aug2022_fortetonBNTI_bindepthcentroids_10888ESVs.RData")
@@ -2108,11 +2049,10 @@ date
 
 ```
 
-
-
 ## 4. Hill's number
 
 ### a. ran on rarefied data
+
 ```{r}
 require(iNEXT)
 bio1 <- as.matrix(ps@otu_table@.Data)
@@ -2144,6 +2084,7 @@ rm(bio8)
 ```
 
 ### b. regression of richness and depth
+
 ```{r}
 require(mgcv)
 #load environment and Hill's number file. 
@@ -2171,88 +2112,61 @@ summary(dat_gam)
 
 ```
 
-Call:
-lm(formula = meta_sed_26_hills$Species_Richness ~ meta_sed_26_hills$depth)
+Call: lm(formula = meta_sed_26_hills$Species_Richness ~ meta_sed_26_hills$depth)
 
-Residuals:
-     Min       1Q   Median       3Q      Max 
--1829.58  -394.87   -16.98   432.42  1375.02 
+Residuals: Min 1Q Median 3Q Max -1829.58 -394.87 -16.98 432.42 1375.02
 
-Coefficients:
-                        Estimate Std. Error t value Pr(>|t|)    
-(Intercept)             2608.585     47.284  55.168   <2e-16 ***
-meta_sed_26_hills$depth  -30.408      3.482  -8.732   <2e-16 ***
+Coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
+(Intercept) 2608.585 47.284 55.168 \<2e-16 ***meta_sed_26_hills\$depth -30.408 3.482 -8.732 \<2e-16***
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-Residual standard error: 554.2 on 427 degrees of freedom
-Multiple R-squared:  0.1515,	Adjusted R-squared:  0.1495 
-F-statistic: 76.25 on 1 and 427 DF,  p-value: < 2.2e-16
+Residual standard error: 554.2 on 427 degrees of freedom Multiple R-squared: 0.1515, Adjusted R-squared: 0.1495 F-statistic: 76.25 on 1 and 427 DF, p-value: \< 2.2e-16
 
+Call: lm(formula = meta_sed_26_hills$Shannon_Diversity ~ meta_sed_26_hills$depth)
 
-Call:
-lm(formula = meta_sed_26_hills$Shannon_Diversity ~ meta_sed_26_hills$depth)
+Residuals: Min 1Q Median 3Q Max -877.93 -233.20 -27.67 216.85 1036.11
 
-Residuals:
-    Min      1Q  Median      3Q     Max 
--877.93 -233.20  -27.67  216.85 1036.11 
+Coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
+(Intercept) 892.845 27.068 32.985 \< 2e-16 ***meta_sed_26_hills\$depth -14.226 1.993 -7.137 4.13e-12***
 
-Coefficients:
-                        Estimate Std. Error t value Pr(>|t|)    
-(Intercept)              892.845     27.068  32.985  < 2e-16 ***
-meta_sed_26_hills$depth  -14.226      1.993  -7.137 4.13e-12 ***
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Residual standard error: 317.2 on 427 degrees of freedom Multiple R-squared: 0.1066, Adjusted R-squared: 0.1045 F-statistic: 50.93 on 1 and 427 DF, p-value: 4.134e-12
 
-Residual standard error: 317.2 on 427 degrees of freedom
-Multiple R-squared:  0.1066,	Adjusted R-squared:  0.1045 
-F-statistic: 50.93 on 1 and 427 DF,  p-value: 4.134e-12
+Call: lm(formula = meta_sed_26_hills$Simpson_Dominance ~ meta_sed_26_hills$depth)
 
+Residuals: Min 1Q Median 3Q Max -267.24 -86.48 -22.33 68.79 448.47
 
-Call:
-lm(formula = meta_sed_26_hills$Simpson_Dominance ~ meta_sed_26_hills$depth)
+Coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
+(Intercept) 269.7218 10.4390 25.838 \< 2e-16 ***meta_sed_26_hills\$depth -4.0058 0.7688 -5.211 2.94e-07***
 
-Residuals:
-    Min      1Q  Median      3Q     Max 
--267.24  -86.48  -22.33   68.79  448.47 
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-Coefficients:
-                        Estimate Std. Error t value Pr(>|t|)    
-(Intercept)             269.7218    10.4390  25.838  < 2e-16 ***
-meta_sed_26_hills$depth  -4.0058     0.7688  -5.211 2.94e-07 ***
+Residual standard error: 122.3 on 427 degrees of freedom Multiple R-squared: 0.05978, Adjusted R-squared: 0.05758 F-statistic: 27.15 on 1 and 427 DF, p-value: 2.936e-07
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+GAM RESULTS Family: gaussian Link function: identity
 
-Residual standard error: 122.3 on 427 degrees of freedom
-Multiple R-squared:  0.05978,	Adjusted R-squared:  0.05758 
-F-statistic: 27.15 on 1 and 427 DF,  p-value: 2.936e-07
+Formula: y \~ s(x, k = 3)
 
-GAM RESULTS
-Family: gaussian 
-Link function: identity 
+Parametric coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
+(Intercept) 2268.14 26.76 84.77 \<2e-16 \*\*\*
 
-Formula:
-y ~ s(x, k = 3)
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-Parametric coefficients:
-            Estimate Std. Error t value Pr(>|t|)    
-(Intercept)  2268.14      26.76   84.77   <2e-16 ***
+Approximate significance of smooth terms: edf Ref.df F p-value\
+s(x) 1 1 76.25 \<2e-16 \*\*\*
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
-Approximate significance of smooth terms:
-     edf Ref.df     F p-value    
-s(x)   1      1 76.25  <2e-16 ***
-
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
-
-R-sq.(adj) =   0.15   Deviance explained = 15.2%
-GCV = 3.0854e+05  Scale est. = 3.071e+05  n = 429
-
+R-sq.(adj) = 0.15 Deviance explained = 15.2% GCV = 3.0854e+05 Scale est. = 3.071e+05 n = 429
 
 ## 5. Top phyla and families
+
 ### a. Caluclate top phyla
+
 went back and changed to Phylum without the kingdom and phylum pasted together, since tax_glom knows how to keep those separate
+
 ```{r}
 require(stringr)
 require(pivottabler)
@@ -2328,8 +2242,10 @@ sum(ps_melt[ps_melt$Phylum%in%subphy,]$Abundance)/length(unique(ps_melt$samp_nam
 
 ```
 
-### b. Family abundances 
+### b. Family abundances
+
 redoing not on Teton
+
 ```{r}
 require(stringr)
 require(pivottabler)
@@ -2380,8 +2296,8 @@ melt<-psmelt(ps_tr_26_fam)
 
 ```
 
-
 ### i. calculate top 10 families in each bin depth
+
 ```{r}
 require(pivottabler)
 require(reshape)
@@ -2435,7 +2351,9 @@ sum(fam[fam$alltax_tofam%in%families,]$Abundance, na.rm=T)/429
 ```
 
 ### ii. SFig6 plot the top 17 families
+
 this is where I looked to see which phyla should be split into families. All 17 of these families have greater than 2% relative abundance across the dataset.
+
 ```{r}
 require(stringr)
 require(RColorBrewer)
@@ -2529,9 +2447,8 @@ dev.off()
 
 ```
 
-
-
 ### iii. combine phylum and family
+
 ```{r}
 #only taxa <= 26 cm
 allphy<-read.csv("allphyla_29Sept2022.csv", header=T, row.names=1)
@@ -2742,7 +2659,9 @@ lake_drives<-unique(domtax$lake_drive)
 ```
 
 ### v. Fig 3. Dominant Groups
+
 top of plot
+
 ```{r}
 require(pivottabler)
 unique_tax<-c("Bacteria@Proteobacteria@Undifferentiated_Proteobacteria",
@@ -2832,6 +2751,7 @@ lines(sum_temp[,2],sum_temp$bin_depth, col=sed_col[i],lwd=3)
 ```
 
 bottom of plot
+
 ```{r}
 zone_colors<- c(rep('#018571',5),rep('#C4AD79',3),rep('#a6611a',3))
 unique_tax <-c(     "Bacteria@Cyanobacteria", 
@@ -2886,6 +2806,7 @@ dev.off()
 ```
 
 ## 6. NMDS
+
 ```{r}
 require(colorspace)
 require(vegan)
@@ -2966,8 +2887,8 @@ ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-
 #save.image("NMDS_6Sept2022.Rdata")
 ```
 
-
 ### ii. plot NMDS
+
 ```{r}
 load("NMDS_6Sept2022.Rdata")
 
@@ -2982,6 +2903,7 @@ dev.off()
 ```
 
 ### iii. plot with additional variables (just to check)
+
 ```{r}
 ord.fit <- envfit(ord_baseR ~  sediment_depth + lake_depth + bottom_water_temp +water_sample_ph_surf +water_sample_ph_bot+water_sample_do_bot + water_sample_t_surf + water_sample_do_surf + elevation_meters,  data = sd_sed,  perm = 1000, na.rm = TRUE)
 ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-1))
@@ -3009,8 +2931,8 @@ x
 
 ```
 
-
 ### iv. Adonis testing - done 6 Sept 2022
+
 ```{r}
 require(vegan)
 require(parallelDist)
@@ -3036,25 +2958,21 @@ adonis_dist<-parDist(adonis_table, method = "bray")
 adonis(adonis_dist ~ depth+  water_sample_t_bot + max_lake_depth, data = sd)  
 ```
 
-Call:
-adonis(formula = adonis_dist ~ depth + water_sample_t_bot + max_lake_depth,      data = sd) 
+Call: adonis(formula = adonis_dist \~ depth + water_sample_t\_bot + max_lake_depth, data = sd)
 
-Permutation: free
-Number of permutations: 999
+Permutation: free Number of permutations: 999
 
 Terms added sequentially (first to last)
 
                     Df SumsOfSqs MeanSqs F.Model      R2 Pr(>F)    
-depth                1     9.707  9.7074  27.915 0.05236  0.001 ***
-water_sample_t_bot   1     7.267  7.2669  20.897 0.03920  0.001 ***
-max_lake_depth       1     3.583  3.5826  10.302 0.01932  0.001 ***
-Residuals          474   164.835  0.3478         0.88912           
-Total              477   185.392                 1.00000           
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+depth 1 9.707 9.7074 27.915 0.05236 0.001 ***water_sample_t\_bot 1 7.267 7.2669 20.897 0.03920 0.001*** max_lake_depth 1 3.583 3.5826 10.302 0.01932 0.001 \*\*\* Residuals 474 164.835 0.3478 0.88912\
+Total 477 185.392 1.00000
 
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
 ### iv. Adonis testing - done 28 Sept 2022
+
 ```{r}
 require(vegan)
 require(parallelDist)
@@ -3085,24 +3003,22 @@ adonis_table<-data.matrix(ps_table)
 adonis_dist<-parDist(adonis_table, method = "bray") 
 adonis(adonis_dist ~ zone+  water_sample_t_bot + max_lake_depth, data = sd)  
 ```
-Call:
-adonis(formula = adonis_dist ~ zone + water_sample_t_bot + max_lake_depth,      data = sd) 
 
-Permutation: free
-Number of permutations: 999
+Call: adonis(formula = adonis_dist \~ zone + water_sample_t\_bot + max_lake_depth, data = sd)
+
+Permutation: free Number of permutations: 999
 
 Terms added sequentially (first to last)
 
                     Df SumsOfSqs MeanSqs F.Model      R2 Pr(>F)    
-zone                 3    13.452  4.4840  13.159 0.07256  0.001 ***
-water_sample_t_bot   1     7.384  7.3843  21.670 0.03983  0.001 ***
-max_lake_depth       1     3.719  3.7186  10.913 0.02006  0.001 ***
-Residuals          472   160.837  0.3408         0.86755           
-Total              477   185.392                 1.00000           
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+zone 3 13.452 4.4840 13.159 0.07256 0.001 ***water_sample_t\_bot 1 7.384 7.3843 21.670 0.03983 0.001*** max_lake_depth 1 3.719 3.7186 10.913 0.02006 0.001 \*\*\* Residuals 472 160.837 0.3408 0.86755\
+Total 477 185.392 1.00000
 
-### iiv. plot each zone separately 
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
+
+### iiv. plot each zone separately
+
 ```{r}
 #ord_df_backup<-ord_df
 #temp<-ord_df #reversed the whole dataset to temp to subset from
@@ -3123,6 +3039,7 @@ dev.off()
 ```
 
 ### ix. points by mountain range
+
 ```{r}
 ord_df<-ord_df_backup
 ord_df$mtn_pch<-rep(NA,nrow(ord_df))
@@ -3145,6 +3062,7 @@ dev.off()
 ```
 
 ## 7. Pairwise comparisons
+
 ```{r}
 require(vegan)
 require(geosphere)
@@ -3249,6 +3167,7 @@ rm(tps_norm)
 ```
 
 ### i. add env dist
+
 ```{r}
 require(cluster)
 #load data and comparison file
@@ -3289,7 +3208,8 @@ rm(env_distance)
 
 ### iii. Fig. 5 env and geodist decay
 
-Absolute sediment distance, only looking at <26 samples
+Absolute sediment distance, only looking at \<26 samples
+
 ```{r}
 require(mgcv)
 comps<-read.csv("pairwise_comparisons_13Sept2022.csv",row.names=1, header=T)
@@ -3297,7 +3217,8 @@ comps$geo_dist_km<-comps$geo_dist/1000 # add a column for geographic distance in
 #write.csv(comps, "pairwise_comparisons_13Sept2022.csv")
 ```
 
-Start here 
+Start here
+
 ```{r}
 require(mgcv)
 require(patchwork)
@@ -3306,6 +3227,7 @@ comps<-read.csv("pairwise_comparisons_14Sept2022.csv",row.names=1, header=T)
 ```
 
 summary figure (horizons not broken out)
+
 ```{r}
 model_result<-list()
 theme_comm<-theme_classic()+
@@ -3406,6 +3328,7 @@ ggplt[[1]]+ ggplt[[2]] + ggplt[[3]] + plot_layout(ncol = 3)
 dev.off()
 
 ```
+
 ```{r}
 print("sediment distance, pval, rsq")
 model_result[[1]]$s.pv
@@ -3423,10 +3346,8 @@ model_result[[3]]$r.sq
 
 ```
 
-
-
-
 supplementary figure - GAMS with different horizons
+
 ```{r}
 theme_comm<-theme_classic()+
         theme(legend.position="none", axis.text=element_text(color="black"))+
@@ -3560,13 +3481,8 @@ dev.off()
 
 ```
 
-
-
-
-
-
-
 ### iv. add in BNTI and RCBRAY
+
 ```{bash}
 rsync jvonegge@teton.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/BNTI/WyLakeMicrobes_env_30Aug2022_finalBNTI_abundwt_10888ESVs.RData /Users/jordanscheibe/Desktop
 
@@ -3601,7 +3517,6 @@ rm(dist_bnti)
 rm(BNTI)
 rm(BNTI_dist)
 ```
-
 
 ```{r}
 #add in RCBRAY to comps, from above
@@ -3643,7 +3558,9 @@ table(comps$s2_samp_names==RC.bray_dist_df$s2_samp_names)
 comps$RCbray<-RC.bray_dist_df$RCbray
 
 ```
+
 ### v. add in selection processes
+
 ```{r}
 comps$process<-rep(NA, nrow(comps))
 comps[comps$BNTI< (-2),]$process<-"Homogeneous selection"
@@ -3656,6 +3573,7 @@ comps[comps$BNTI< (2) & comps$BNTI> (-2) & comps$RCbray > (-0.95) & comps$RCbray
 ```
 
 ### vi. stats community assembly processes - OLD
+
 ```{r}
 table(comps$process)/nrow(comps)
 
@@ -3667,16 +3585,11 @@ table(comps$process)/nrow(comps)
   0.0056665175 + 0.0002543793
   
 ```
-  Dispersal limitation                  Drift  Homogeneous selection Homogenizing dispersal 
-          0.1024271291           0.0056665175           0.2045297054           0.0002543793 
-    Variable selection 
-          0.6871222687 
-### Fig 6 - Continuous Assembly Processes
-just like the decay relationships, I'm going to only look 26 cm 
-then I'll also plot the 26+ ones as a supplementary figure
 
+Dispersal limitation Drift Homogeneous selection Homogenizing dispersal 0.1024271291 0.0056665175 0.2045297054 0.0002543793 Variable selection 0.6871222687 \### Fig 6 - Continuous Assembly Processes just like the decay relationships, I'm going to only look 26 cm then I'll also plot the 26+ ones as a supplementary figure
 
-#### 0) RUN THIS FIRST 
+#### 0) RUN THIS FIRST
+
 ```{r}
 comps_backup<-read.csv("pairwise_comparisons_14Sept2022.csv", header=T, row.names=1) # load this as a backup file and pull from there
 
@@ -3692,9 +3605,10 @@ comps<-comps_backup
 comps<-comps[comps$s1_zone%in%c("A","B","C") & comps$s2_zone%in%c("A","B","C"),]
 ```
 
-#### 1) sediment depth 
+#### 1) sediment depth
 
 both figures (across sed depth all processes and the GAMs)
+
 ```{r}
 require(Hmisc)
 
@@ -3739,7 +3653,6 @@ unique(tally$n)
 #341 311 274 241 208 180 149 213 164
 ```
 
-
 ```{r}
 
 require(mgcv)
@@ -3770,7 +3683,9 @@ Data<-Data[order(Data$x),]
 dev.off()
 
 ```
+
 #### 1.5) SFig 7 sediment distance with deep samples only
+
 ```{r}
 comps<-comps_backup
 comps$d_val<-comps$abs_cm
@@ -3792,13 +3707,12 @@ EAP_plot
 dev.off()
 ```
 
+#### 2) environmental distance within each zone
 
-#### 2) environmental distance within each zone 
-old breaks
- "[0.0162,0.117)" "[0.1167,0.163)" "[0.1632,0.208)" "[0.2080,0.240)" "[0.2399,0.276)" "[0.2759,0.323)" "[0.3234,0.384)"
- [8] "[0.3835,0.454)" "[0.4543,0.540)" "[0.5399,0.722]"
+old breaks "[0.0162,0.117)" "[0.1167,0.163)" "[0.1632,0.208)" "[0.2080,0.240)" "[0.2399,0.276)" "[0.2759,0.323)" "[0.3234,0.384)" [8] "[0.3835,0.454)" "[0.4543,0.540)" "[0.5399,0.722]"
 
 determine breaks here
+
 ```{r}
 require(stringr)
 require(Hmisc)
@@ -3862,47 +3776,13 @@ mean(full_output$n)
 
 #write.csv(full_output,"Community_assembly_env_dist_summary_11Jan2023.csv")
 ```
-redox (number of comparisons)
-171	0.016
-655	0.1167
-616	0.1632
-602	0.208
-646	0.2399
-628	0.2759
-617	0.3234
-634	0.3835
-621	0.4543
-626	0.5399
-625	0.722
-transition
-315	0.016
-1045	0.1167
-1092	0.1632
-909	0.208
-929	0.2399
-928	0.2759
-1052	0.3234
-996	0.3835
-1028	0.4543
-1030	0.5399
-972	0.722
-depauperate
-821	0.016
-1646	0.1167
-2020	0.1632
-1223	0.208
-1511	0.2399
-1414	0.2759
-1579	0.3234
-1122	0.3835
-1238	0.4543
-1133	0.5399
-828	0.722
+
+redox (number of comparisons) 171 0.016 655 0.1167 616 0.1632 602 0.208 646 0.2399 628 0.2759 617 0.3234 634 0.3835 621 0.4543 626 0.5399 625 0.722 transition 315 0.016 1045 0.1167 1092 0.1632 909 0.208 929 0.2399 928 0.2759 1052 0.3234 996 0.3835 1028 0.4543 1030 0.5399 972 0.722 depauperate 821 0.016 1646 0.1167 2020 0.1632 1223 0.208 1511 0.2399 1414 0.2759 1579 0.3234 1122 0.3835 1238 0.4543 1133 0.5399 828 0.722
 
 #### 3) geographic distance
 
-11 Jan 2023, update by separate out cores in same lake 
-reload 0) from above
+11 Jan 2023, update by separate out cores in same lake reload 0) from above
+
 ```{r}
 comps[comps$s1_lake_id==comps$s2_lake_id & comps$s1_lake_drive!=comps$s2_lake_drive,]$geo_dist_km<-0.001 #add one meter for cores in the same lake
 comps$d_val<-comps$geo_dist_km
@@ -3949,41 +3829,15 @@ print(breaks_labels)
 
 #write.csv(full_output,"Community_assembly_geo_dist_summary_11Jan2023.csv")
 ```
-"[0,0]"     "(0,0.1]"   "(0.1,5]"   "(5,10]"    "(10,15]"   "(15,100]"  "(100,300]" "(300,400]" "(400,500]"
 
-Redox (number of comparisons in each bin)
-96	0
-75	0.1
-705	5
-558	10
-583	15
-757	100
-1537	300
-1136	400
-994	500
+"[0,0]" "(0,0.1]" "(0.1,5]" "(5,10]" "(10,15]" "(15,100]" "(100,300]" "(300,400]" "(400,500]"
 
-Transition
-191	0
-124	0.1
-944	5
-810	10
-844	15
-1486	100
-2604	300
-1869	400
-1424	500
-Depauperate 
-390	0
-431	0.1
-1002	5
-1168	10
-1448	15
-2461	100
-2437	300
-2599	400
-2599	500
+Redox (number of comparisons in each bin) 96 0 75 0.1 705 5 558 10 583 15 757 100 1537 300 1136 400 994 500
+
+Transition 191 0 124 0.1 944 5 810 10 844 15 1486 100 2604 300 1869 400 1424 500 Depauperate 390 0 431 0.1 1002 5 1168 10 1448 15 2461 100 2437 300 2599 400 2599 500
 
 combine the two dataframes
+
 ```{r}
 geo_dist_tally<-read.csv("Community_assembly_geo_dist_summary_11Jan2023.csv",header=T, row.names=1) #removed from folder after combined dataframe made
 env_dist_tally<-read.csv("Community_assembly_env_dist_summary_11Jan2023.csv", header=T, row.names = 1) #removed from folder after combined dataframe made
@@ -4000,9 +3854,8 @@ full_output[full_output$dist=="geo",]$dist<-'Distance (km)'
 #write.csv(full_output,"Community_assembly_env_geo_dist_summary_11Jan2023.csv")
 ```
 
+####4) GAMs with 0s for each process this most recent version breaks out the intra-lake comparisons (so different cores within the same lake (just for the geographic distnace))
 
-####4) GAMs with 0s for each process
-this most recent version breaks out the intra-lake comparisons (so different cores within the same lake (just for the geographic distnace))
 ```{r}
 require(mgcv)
 full_output<-read.csv("Community_assembly_env_geo_dist_summary_11Jan2023.csv", header=T, row.names = 1)
@@ -4014,7 +3867,8 @@ break_labels[[2]]<-c("[0, 0]", "[0.016, 0.12)", "[0.12, 0.16)", "[0.16, 0.21)", 
 "[0.45, 0.54)" ,"[0.54, 0.72]")
 ```
 
-GAM figures 
+GAM figures
+
 ```{r}
 model_results<-data.frame(dist=NULL, process=NULL, zone=NULL, rsq=NULL, p=NULL)
 
@@ -4055,8 +3909,8 @@ dev.off()
 #write.csv(model_results, "CommunityAssembly_GAMS_with0_11Jan2023.csv")
 ```
 
-
 #### 5) Redoing the GAMS without 0
+
 ```{r}
 require(mgcv)
 full_output<-read.csv("Community_assembly_env_geo_dist_summary_11Jan2023.csv", header=T, row.names = 1)
@@ -4109,7 +3963,6 @@ dev.off()
 #write.csv(model_results, "CommunityAssembly_GAMS_without0_11Jan2023.csv")
 
 ```
-
 
 #### 6) redoing the Fig6 with patchwork
 
@@ -4179,11 +4032,8 @@ dev.off()
 
 ```
 
-
-
-
-
 ## 8. SFig 2 - top 3 ESVs
+
 ```{r}
 require(mgcv)
 #determine top 3 ESVs
@@ -4235,8 +4085,11 @@ dev.off()
 
         
 ```
+
 ## 9. SFig 3 - Bathy and Dehalo
+
 both of these families are most abundant in the depauperate zone, but seem to only be at high abundances when the other is at low abundances
+
 ```{r}
 
 fam<-read.csv("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/WYLakeSedMicrobes/family_abundances_6sept2022.csv",header=T, row.names=1)
@@ -4255,7 +4108,8 @@ dev.off()
 
 ```
 
-## 10. SFig 1 - individual CONISS 
+## 10. SFig 1 - individual CONISS
+
 ```{r}
 require(rioja)
 require(vegan)
@@ -4309,7 +4163,9 @@ for(i in 1:length(lake_drives)){
 dev.off()
 
 ```
+
 ## 11. Anero and methanos
+
 ```{r}
 require(mgcv)
 #check what genuses are in the Methanosaetaceae
@@ -4351,7 +4207,9 @@ Data<-data.frame(x=methano_anaero$abund_methanosaeta,y=methano_anaero$abund_anae
 gam_res
         
 ```
+
 ## 12. Methanoreg and Syntro
+
 ```{r}
 #look to see what genuses are in Methanoregulaceae
 sub<-subset_taxa(ps_tr, Family=="Methanoregulaceae")
@@ -4392,7 +4250,9 @@ Data<-data.frame(x=methano_syn$abund_meth,y=methano_syn$abund_syn)
          
 gam_res
 ```
+
 ## 13. Bathy and Thaum
+
 ```{r}
 sub<-subset_taxa(ps_tr, Phylum=="Thaumarchaeota")
 sub<-tax_glom(sub,taxrank = "Phylum")
@@ -4429,6 +4289,7 @@ gam_res
 ```
 
 ## 14. SFig. 4 EnvDist vs GeoDist
+
 ```{r}
 comps<-read.csv("pairwise_comparisons_14Sept2022.csv",row.names=1, header=T)
 
@@ -4443,27 +4304,22 @@ abline(lm(sub$env_dist~sub$geo_dist_km), lwd=4, col="plum3")
 dev.off()
 summary(lm(sub$env_dist~sub$geo_dist_km))
 ```
-Call:
-lm(formula = sub$env_dist ~ sub$geo_dist_km)
 
-Residuals:
-     Min       1Q   Median       3Q      Max 
--0.29498 -0.11251 -0.01654  0.10730  0.39676 
+Call: lm(formula = sub$env_dist ~ sub$geo_dist_km)
 
-Coefficients:
-                  Estimate Std. Error t value Pr(>|t|)    
-(Intercept)      3.255e-01  9.463e-03   34.40   <2e-16 ***
-sub$geo_dist_km -5.871e-05  3.394e-05   -1.73   0.0842 .  
+Residuals: Min 1Q Median 3Q Max -0.29498 -0.11251 -0.01654 0.10730 0.39676
 
-Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+Coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
+(Intercept) 3.255e-01 9.463e-03 34.40 \<2e-16 \*\*\* sub\$geo_dist_km -5.871e-05 3.394e-05 -1.73 0.0842 .
 
-Residual standard error: 0.1522 on 662 degrees of freedom
-Multiple R-squared:  0.004498,	Adjusted R-squared:  0.002994 
-F-statistic: 2.991 on 1 and 662 DF,  p-value: 0.08418
+Signif. codes: 0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
 
+Residual standard error: 0.1522 on 662 degrees of freedom Multiple R-squared: 0.004498, Adjusted R-squared: 0.002994 F-statistic: 2.991 on 1 and 662 DF, p-value: 0.08418
 
 ## 15. mantel tests of RCBray values
+
 These all need to be dist objects
+
 ```{r}
 #this is copied from above for the mantel tests
 require(cluster)
@@ -4533,69 +4389,42 @@ mantel.partial(RCbray, env_dist, geo_dist, method = "pearson", permutations = 99
 mantel.partial(RCbray, geo_dist, env_dist, method = "pearson", permutations = 999)
 ```
 
-Mantel statistic based on Pearson's product-moment correlation 
+Mantel statistic based on Pearson's product-moment correlation
 
-Call:
-mantel(xdis = RCbray, ydis = env_dist) 
+Call: mantel(xdis = RCbray, ydis = env_dist)
 
-Mantel statistic r: 0.2314 
-      Significance: 0.001 
+Mantel statistic r: 0.2314 Significance: 0.001
 
-Upper quantiles of permutations (null model):
-    90%     95%   97.5%     99% 
-0.00874 0.01089 0.01331 0.01641 
-Permutation: free
-Number of permutations: 999
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.00874 0.01089 0.01331 0.01641 Permutation: free Number of permutations: 999
 
+Mantel statistic based on Pearson's product-moment correlation
 
-Mantel statistic based on Pearson's product-moment correlation 
+Call: mantel(xdis = RCbray, ydis = geo_dist)
 
-Call:
-mantel(xdis = RCbray, ydis = geo_dist) 
+Mantel statistic r: 0.1938 Significance: 0.001
 
-Mantel statistic r: 0.1938 
-      Significance: 0.001 
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0091 0.0119 0.0146 0.0191 Permutation: free Number of permutations: 999
 
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0091 0.0119 0.0146 0.0191 
-Permutation: free
-Number of permutations: 999
+Partial Mantel statistic based on Pearson's product-moment correlation
 
+Call: mantel.partial(xdis = RCbray, ydis = env_dist, zdis = geo_dist, method = "pearson", permutations = 999)
 
-Partial Mantel statistic based on Pearson's product-moment correlation 
+Mantel statistic r: 0.2283 Significance: 0.001
 
-Call:
-mantel.partial(xdis = RCbray, ydis = env_dist, zdis = geo_dist,      method = "pearson", permutations = 999) 
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0088 0.0108 0.0130 0.0161 Permutation: free Number of permutations: 999
 
-Mantel statistic r: 0.2283 
-      Significance: 0.001 
+Partial Mantel statistic based on Pearson's product-moment correlation
 
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0088 0.0108 0.0130 0.0161 
-Permutation: free
-Number of permutations: 999
+Call: mantel.partial(xdis = RCbray, ydis = geo_dist, zdis = env_dist, method = "pearson", permutations = 999)
 
+Mantel statistic r: 0.19 Significance: 0.001
 
-Partial Mantel statistic based on Pearson's product-moment correlation 
-
-Call:
-mantel.partial(xdis = RCbray, ydis = geo_dist, zdis = env_dist,      method = "pearson", permutations = 999) 
-
-Mantel statistic r:  0.19 
-      Significance: 0.001 
-
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0109 0.0147 0.0176 0.0209 
-Permutation: free
-Number of permutations: 999
-
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0109 0.0147 0.0176 0.0209 Permutation: free Number of permutations: 999
 
 ## 16. Do archeal ESVs increase with depth? - I need to go back through this and make sure its clean
 
 ran this with rarefied data, not transformed
+
 ```{r}
 require(iNEXT)
 arch<-subset_taxa(ps, Kingdom=="Archaea")
@@ -4656,8 +4485,8 @@ summary(dat_gam)
 
 all three LMs are not significant in archeal ASV richness with depth
 
-
 looking at archeal esvs by zone
+
 ```{r}
 
 ps_tr_26<-subset_samples(ps_tr, bin_depth<=26)
@@ -4766,6 +4595,7 @@ legend("topright", legend=c("Individual core", "Average across cores"),lty=1, lw
 ```
 
 ## 17. correlation of env dist measures
+
 ```{r}
 
 # I'm duplicating here, but just looking
@@ -4783,6 +4613,7 @@ cor()
 ```
 
 ## 18. SedaDNA sites
+
 ```{r}
 library(ggplot2)
 library(ggmap)
@@ -4819,9 +4650,8 @@ mp <- mp + theme_bw() + theme(panel.grid.major = element_blank(), panel.grid.min
 mp 
 ```
 
-
-
 ## 19. BNTI vs env_dist
+
 ```{r}
 require(mgcv)
 comps<-read.csv("pairwise_comparisons_14Sept2022.csv", header=T, row.names=1) # load this as a backup file and pull from there
@@ -4841,6 +4671,7 @@ table(bnti)
 ```
 
 ## 20. phylogenetic signal
+
 ```{r}
 #load data
 require(ape)
@@ -4849,6 +4680,7 @@ require(picante)
 ```
 
 Subset for the most abundant ESVs (10,888 ESVs) for computational tractability
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 all_depths<-NULL
@@ -4873,14 +4705,10 @@ table(sort(rownames(otu_table(my_subset)))==sort(unique_alldepths)) #make sure t
 
 issues is that i'm doing a weighted mean for some samples where the OTU isn't present...
 
-from Vass's email:
-Find optimal niche for conductivity with abundance-weighted-mean conductivity value for each OTU
-Make data table of conductivity in first column, and OTU relative abundance in rest of columns
-Read in environmental data and separate average conductivity column for each site
-Read in envi data
+from Vass's email: Find optimal niche for conductivity with abundance-weighted-mean conductivity value for each OTU Make data table of conductivity in first column, and OTU relative abundance in rest of columns Read in environmental data and separate average conductivity column for each site Read in envi data
 
-From Tripathi et al. 2018
-"To calculate the abundance-weighted mean for a given OTU, we first found all samples in which that OTU was present. We then found the abundance-weighted mean pH of all those samples. To do so, in the calculation of mean pH we weighted each pH value by the abundance of the OTU in the associated sample. This procedure was repeated for each OTU, and the resulting value was used as a rough estimate of that OTU’s pH optimum. Then, between-OTU differences in pH optima were calculated as Euclidean distances. Finally, we used Mantel correlograms to measure the correlation coefficients between differences in pH optima and phylogenetic distances [3, 9], and significance of these correlations was assessed using 999 permutations with Bonferroni correction. "
+From Tripathi et al. 2018 "To calculate the abundance-weighted mean for a given OTU, we first found all samples in which that OTU was present. We then found the abundance-weighted mean pH of all those samples. To do so, in the calculation of mean pH we weighted each pH value by the abundance of the OTU in the associated sample. This procedure was repeated for each OTU, and the resulting value was used as a rough estimate of that OTU's pH optimum. Then, between-OTU differences in pH optima were calculated as Euclidean distances. Finally, we used Mantel correlograms to measure the correlation coefficients between differences in pH optima and phylogenetic distances [3, 9], and significance of these correlations was assessed using 999 permutations with Bonferroni correction."
+
 ```{r}
 #using just the 10888 most abundant ESVs
 #match up with metadata
@@ -4994,6 +4822,7 @@ table(rownames(spp.dist)==rownames(phylo.dist)) #all true
 ```
 
 Mantel test and plotting
+
 ```{r}
 phylo.sig.correlog = mantel.correlog(spp.dist,
                                      phylo.dist,
@@ -5029,6 +4858,7 @@ library(picante)
 ```
 
 Subset for the most abundant ESVs (10,888 ESVs) for computational tractability
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 all_depths<-NULL
@@ -5050,7 +4880,9 @@ length(unique_alldepths)
 my_subset <- subset(otu_table(ps), rownames(otu_table(ps)) %in% unique_alldepths)
 table(sort(rownames(otu_table(my_subset)))==sort(unique_alldepths)) #make sure this is all TRUE
 ```
+
 could double check this if I wanted - but all looks fine. Maybe want to do with ESVs with 10+ reads
+
 ```{r}
 #Load phylogenetic tree
 phylo <- read.tree("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/WYLakeSedMicrobes/sed_norm_fasta_29Aug2022_muscled.nwk")
@@ -5175,13 +5007,15 @@ save.image("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
 
 ```
 
-
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal 
 
 ```
+
 #### i) run on Beartooth
+
 phylogenetic_signal_1.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5194,6 +5028,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_1.R
 ```
 
 phylogenetic_signal_2.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5206,6 +5041,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_2.R
 ```
 
 phylogenetic_signal_3.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5218,6 +5054,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_3.R
 ```
 
 phylogenetic_signal_4.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5230,6 +5067,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_4.R
 ```
 
 phylogenetic_signal_5.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5242,6 +5080,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_5.R
 ```
 
 phylogenetic_signal_6.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5254,6 +5093,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_6.R
 ```
 
 phylogenetic_signal_7.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5266,6 +5106,7 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_7.R
 ```
 
 phylogenetic_signal_8.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5277,8 +5118,8 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_8.R
 
 ```
 
-
 phylogenetic_signal_9.R
+
 ```{r}
 require(vegan)
 load("WyLakeMicrobes_env_9Jan2023_phylogeneticsignal_forBeartooth.RData")
@@ -5290,11 +5131,8 @@ save.image("WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_9.R
 
 ```
 
-
-
-
-
 run_phylogenetic_signal.sh
+
 ```{bash}
 #!/bin/bash
 #SBATCH --job-name phylo_signal
@@ -5343,8 +5181,8 @@ date
 
 ```
 
-
 copy files back to computer
+
 ```{bash}
 rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal/WyLakeMicrobes_env_29Jan2023_phylogeneticsignal_mantelcorrresult_1.RData /Users/jordanscheibe/Desktop
 
@@ -5367,9 +5205,8 @@ rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes
 
 ```
 
-
-
 #### ii) Plot mantel correlograms
+
 ```{r}
 env.var.names<-c("depth",               "elevation_meters"   , "max_lake_depth" ,    
 "water_sample_ph_bot", "water_sample_do_bot", "water_sample_t_bot" ,
@@ -5409,11 +5246,12 @@ dev.off()
 
 ```
 
+## 21. iCAMP - Rerun Comm. Assembly
 
-
-## 21. iCAMP - Rerun Comm. Assembly 
 ### a) ESVs with 10+ reads
+
 #### i) subset ESVS with 10 reads
+
 ```{r}
 require(phangorn)
 require(msa)
@@ -5435,8 +5273,11 @@ OTU_10plusreads<-OTU[,-lessthan10]
 dim(OTU_10plusreads)
 table(colSums(OTU_10plusreads)<10)# all FALSE
 ```
-#### ii) subset fasta file 
+
+#### ii) subset fasta file
+
 in local R
+
 ```{r}
 #2. subset fasta file by the ESVs with 10+ reads (normalized reads)
 seqs<-Biostrings::readDNAStringSet("zotus_nonchimeric.fa") #downloaded straight from the calder file folder
@@ -5451,6 +5292,7 @@ rm(list=ls()[! ls() %in% c("OTU_10plusreads", "seqs_sub" )])
 ```
 
 MSA is taking forever so try with old way (clustalO)
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_forPhylogeneticTree_Beartooth_13Jan2023.RData") #this is the subset file that has only ESVs with 10+ reads
 require(Biostrings)
@@ -5461,9 +5303,10 @@ writeXStringSet(seqs_sub,filepath = "ESVs_with10ormorereads_forBeartooth_16Jan20
 rsync /Users/jordanscheibe/Desktop/ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/tree_13Jan2023/maketree_clustalo
 ```
 
-
 #### iii) make tree clustalo and fasttree
+
 Ran this is command line with salloc, pasted output below for records
+
 ```{bash}
 module load arcc/1.0 miniconda3/4.12.0
 conda activate shotgun_env
@@ -5474,37 +5317,11 @@ clustalo -i ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta -o tempfile_16Ja
 FastTree -nt tempfile_16Jan2023_muscled.fa > ESVs_with10ormorereads_output_16Jan2023_muscled.nwk
 
 ```
-(shotgun_env) [jvonegge@blog1 maketree_clustalo]$ salloc --mem=120GB --nodes=1 --cpus-per-task=6 --account=microbiome --time=1:00:00
-salloc: Pending job allocation 6104675
-salloc: job 6104675 queued and waiting for resources
-salloc: job 6104675 has been allocated resources
-salloc: Granted job allocation 6104675
-salloc: Waiting for resource configuration
-salloc: Nodes m221 are ready for job
-[jvonegge@m221 maketree_clustalo]$ module load arcc/1.0 miniconda3/4.12.0
-[jvonegge@m221 maketree_clustalo]$ conda activate shotgun_env
-cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/tree_13Jan2023/maketree_clustalo
-(shotgun_env) [jvonegge@m221 maketree_clustalo]$ cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/tree_13Jan2023/maketree_clustalo
-(shotgun_env) [jvonegge@m221 maketree_clustalo]$ ls
-ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta
-(shotgun_env) [jvonegge@m221 maketree_clustalo]$ clustalo -i ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta -o tempfile_16Jan2023_muscled.fa -v --threads=6
-Using 6 threads
-Read 28316 sequences (type: DNA) from ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta
-Using 218 seeds (chosen with constant stride from length sorted seqs) for mBed (from a total of 28316 sequences)
-Calculating pairwise ktuple-distances...
-Ktuple-distance calculation progress done. CPU time: 494.62u 0.12s 00:08:14.74 Elapsed: 00:01:26
-mBed created 448 cluster/s (with a minimum of 1 and a soft maximum of 100 sequences each)
-Distance calculation within sub-clusters done. CPU time: 94.02u 0.03s 00:01:34.05 Elapsed: 00:00:17
-Guide-tree computation (mBed) done.
-Progressive alignment progress done. CPU time: 348.22u 1.90s 00:05:50.12 Elapsed: 00:04:25
-Alignment written to tempfile_16Jan2023_muscled.fa
 
+(shotgun_env) [[jvonegge\@blog1](mailto:jvonegge@blog1){.email} maketree_clustalo]\$ salloc --mem=120GB --nodes=1 --cpus-per-task=6 --account=microbiome --time=1:00:00 salloc: Pending job allocation 6104675 salloc: job 6104675 queued and waiting for resources salloc: job 6104675 has been allocated resources salloc: Granted job allocation 6104675 salloc: Waiting for resource configuration salloc: Nodes m221 are ready for job [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ module load arcc/1.0 miniconda3/4.12.0 [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ conda activate shotgun_env cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/tree_13Jan2023/maketree_clustalo (shotgun_env) [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/tree_13Jan2023/maketree_clustalo (shotgun_env) [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ ls ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta (shotgun_env) [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ clustalo -i ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta -o tempfile_16Jan2023_muscled.fa -v --threads=6 Using 6 threads Read 28316 sequences (type: DNA) from ESVs_with10ormorereads_forBeartooth_16Jan2023.fasta Using 218 seeds (chosen with constant stride from length sorted seqs) for mBed (from a total of 28316 sequences) Calculating pairwise ktuple-distances... Ktuple-distance calculation progress done. CPU time: 494.62u 0.12s 00:08:14.74 Elapsed: 00:01:26 mBed created 448 cluster/s (with a minimum of 1 and a soft maximum of 100 sequences each) Distance calculation within sub-clusters done. CPU time: 94.02u 0.03s 00:01:34.05 Elapsed: 00:00:17 Guide-tree computation (mBed) done. Progressive alignment progress done. CPU time: 348.22u 1.90s 00:05:50.12 Elapsed: 00:04:25 Alignment written to tempfile_16Jan2023_muscled.fa
 
-(shotgun_env) [jvonegge@m221 maketree_clustalo]$ FastTree -nt tempfile_16Jan2023_muscled.fa > ESVs_with10ormorereads_output_16Jan2023_muscled.nwk
-ML-NNI round 11: LogLk = -911140.600 NNIs 337 max delta 10.59 Time 656.25 (final)
-Optimize all lengths: LogLk = -911087.046 Time 669.69  
+(shotgun_env) [[jvonegge\@m221](mailto:jvonegge@m221){.email} maketree_clustalo]\$ FastTree -nt tempfile_16Jan2023_muscled.fa \> ESVs_with10ormorereads_output_16Jan2023_muscled.nwk ML-NNI round 11: LogLk = -911140.600 NNIs 337 max delta 10.59 Time 656.25 (final) Optimize all lengths: LogLk = -911087.046 Time 669.69\
 Total time: 748.59 seconds Unique: 28316/28316 Bad splits: 46/28313 Worst delta-LogLk 7.368
-
 
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/WyLakeMicrobes_phyloseq_env_forPhylogeneticTree_Beartooth_13Jan2023.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/BNTI/iCAMP/qpen/10plus_ESVs
@@ -5515,10 +5332,10 @@ mv WyLakeMicrobes_phyloseq_env_forPhylogeneticTree_Beartooth_13Jan2023.RData WyL
 
 ```
 
-
 #### v) qpen ESVs with 10+ reads
 
 qpen_function.R
+
 ```{r}
 require(phyloseq)
 require(iCAMP)
@@ -5549,6 +5366,7 @@ save.image("WyLakeMicrobes_env_16Jan2023_qpen_ESVswith10plusreads_results.RData"
 ```
 
 run_qpen_function.sh
+
 ```{bash}
 #!/bin/bash
 #SBATCH --job-name qpen_10plus
@@ -5570,7 +5388,6 @@ echo "finished qpen iCAMP - JVE"
 date
 ```
 
-
 ```{bash}
 rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP_package/ESVswith10plusreads/qpen/WyLakeMicrobes_env_16Jan2023_qpen_ESVswith10plusreads_results.RData /Users/jordanscheibe/Desktop
 
@@ -5583,12 +5400,14 @@ rsync /Users/jordanscheibe/Desktop/WyLakeMicrobes_phyloseq_env_29Aug2022.RData j
 
 ```
 
-doing this in the bash terminal: 
+doing this in the bash terminal:
+
 ```{bash}
 module load gcc/12.2.0 r/4.2.2
 ```
 
 dniche_function.R
+
 ```{r}
 require(dplyr)
 require(caret)
@@ -5675,9 +5494,9 @@ env<-metadata.2
 
  save.image("dniche_psbin_ESV10plusreads_26Jan2023.Rdata")
 ```
- 
 
 run_dniche_function.sh
+
 ```{bash}
 #!/bin/bash
 #SBATCH --job-name dniche_10plus
@@ -5699,14 +5518,12 @@ echo "finished dniche iCAMP - JVE"
 date
 ```
 
-
 ### b) qpen results
-
-
 
 #### 1) qpen output - ESVs with 10plus reads
 
 ###### a) start here
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 load("WyLakeMicrobes_env_16Jan2023_qpen_ESVswith10plusreads_results.RData")
@@ -5818,9 +5635,8 @@ pairwise$geo_dist_km<-pairwise$geo_dist/1000
 write.csv(pairwise, "qpen_10plusESVs_allcomparisons_7Feb2023.csv")
 ```
 
+###### b) environmental distance within each zone
 
-
-###### b) environmental distance within each zone 
 ```{r}
 require(stringr)
 require(Hmisc)
@@ -5893,6 +5709,7 @@ write.csv(full_output, "qpen_10plusESVs_envdist_8Feb2023.csv")
 ```
 
 ###### c) geographic distance
+
 ```{r}
 comps_backup<-read.csv("qpen_10plusESVs_allcomparisons_7Feb2023.csv", header=T, row.names=1)
 comps<-comps_backup
@@ -5945,6 +5762,7 @@ write.csv(full_output, "qpen_10plusESVs_geodist_8Feb2023.csv")
 ```
 
 ###### d) combine the two dataframes
+
 ```{r}
 geo_dist_tally<-read.csv("qpen_10plusESVs_geodist_8Feb2023.csv", header=T, row.names=1)
 env_dist_tally<-read.csv("qpen_10plusESVs_envdist_8Feb2023.csv", header=T, row.names=1)
@@ -5976,7 +5794,9 @@ write.csv(count, "qpen_10plusESVs_count_summary_8Feb2023.csv")
 ```
 
 ###### e) plot env and geo dist
+
 option to plot all five processes, or just the stochastic processes
+
 ```{r}
 require(patchwork)
 require(ggplot2)
@@ -6050,6 +5870,7 @@ dev.off()
 ```
 
 ###### f) plot sediment distance
+
 ```{r}
 require(Hmisc)
 qpn<-read.csv("qpen_10plusESVs_allcomparisons_7Feb2023.csv", header=T, row.names=1)
@@ -6119,10 +5940,9 @@ unique(tally$n)
 
 ```
 
-
 #### 2) GAMS without 0
-doesn't include comparisons within the same lake
-8Feb2023 - the labeling for geographic distance is off (double check if going to put in supplementary figures)
+
+doesn't include comparisons within the same lake 8Feb2023 - the labeling for geographic distance is off (double check if going to put in supplementary figures)
 
 ```{r}
 require(mgcv)
@@ -6179,8 +5999,9 @@ dev.off()
 write.csv(model_results, "qPEN_CommunityAssembly_GAMS_without0_8Feb2023.csv")
 
 ```
-sediment distance
-(with zero)
+
+sediment distance (with zero)
+
 ```{r}
 
 tally<-read.csv("qpen_sedimentdistance_13Feb2023.csv", header=T,row.names=1)
@@ -6228,8 +6049,6 @@ dev.off()
 
 round(mean(model_results$rsq),digits=3)
 ```
-
-
 
 #### 3) Stochastic vs. Deterministic
 
@@ -6326,8 +6145,8 @@ dev.off()
 
 ```
 
-
 #### 4) Selection, dispersal, drift
+
 ```{r}
 require(patchwork)
 
@@ -6420,6 +6239,7 @@ ggplt[[1]]+ggplt[[2]]+ ggplt[[3]]+ggplt[[4]]+ggplt[[5]]+ggplt[[6]]+
 dev.off()
 
 ```
+
 #### 5) CAP sediment characteristics
 
 ```{r}
@@ -6571,8 +6391,8 @@ pairwise$geo_dist_km<-pairwise$geo_dist/1000
 write.csv(pairwise, "qpen_10plusESVs_sediment_characteristics_7Feb2023.csv")
 ```
 
-
 plot all zones together
+
 ```{r}
 require(Hmisc)
 qpn<-read.csv("qpen_10plusESVs_sediment_characteristics_7Feb2023.csv", header=T, row.names=1)
@@ -6675,9 +6495,10 @@ mean(t_result[t_result$sig=="sig",]$pval)
 
 ```
 
-
 #### 7) mantel tests of RCBray values
+
 These all need to be dist objects
+
 ```{r}
 load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
 load("WyLakeMicrobes_env_16Jan2023_qpen_ESVswith10plusreads_results.RData")
@@ -6752,66 +6573,38 @@ mantel(RCbray, geo_dist)
 mantel.partial(RCbray, env_dist, geo_dist, method = "pearson", permutations = 999)
 mantel.partial(RCbray, geo_dist, env_dist, method = "pearson", permutations = 999)
 ```
-Mantel statistic based on Pearson's product-moment correlation 
 
-Call:
-mantel(xdis = RCbray, ydis = env_dist) 
+Mantel statistic based on Pearson's product-moment correlation
 
-Mantel statistic r: 0.246 
-      Significance: 0.001 
+Call: mantel(xdis = RCbray, ydis = env_dist)
 
-Upper quantiles of permutations (null model):
-    90%     95%   97.5%     99% 
-0.00917 0.01263 0.01589 0.01806 
-Permutation: free
-Number of permutations: 999
+Mantel statistic r: 0.246 Significance: 0.001
 
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.00917 0.01263 0.01589 0.01806 Permutation: free Number of permutations: 999
 
-Mantel statistic based on Pearson's product-moment correlation 
+Mantel statistic based on Pearson's product-moment correlation
 
-Call:
-mantel(xdis = RCbray, ydis = geo_dist) 
+Call: mantel(xdis = RCbray, ydis = geo_dist)
 
-Mantel statistic r: 0.2047 
-      Significance: 0.001 
+Mantel statistic r: 0.2047 Significance: 0.001
 
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0124 0.0165 0.0197 0.0241 
-Permutation: free
-Number of permutations: 999
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0124 0.0165 0.0197 0.0241 Permutation: free Number of permutations: 999
 
+Partial Mantel statistic based on Pearson's product-moment correlation
 
-Partial Mantel statistic based on Pearson's product-moment correlation 
+Call: mantel.partial(xdis = RCbray, ydis = env_dist, zdis = geo_dist, method = "pearson", permutations = 999)
 
-Call:
-mantel.partial(xdis = RCbray, ydis = env_dist, zdis = geo_dist,      method = "pearson", permutations = 999) 
+Mantel statistic r: 0.2433 Significance: 0.001
 
-Mantel statistic r: 0.2433 
-      Significance: 0.001 
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0103 0.0130 0.0147 0.0179 Permutation: free Number of permutations: 999
 
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0103 0.0130 0.0147 0.0179 
-Permutation: free
-Number of permutations: 999
+Partial Mantel statistic based on Pearson's product-moment correlation
 
+Call: mantel.partial(xdis = RCbray, ydis = geo_dist, zdis = env_dist, method = "pearson", permutations = 999)
 
-Partial Mantel statistic based on Pearson's product-moment correlation 
+Mantel statistic r: 0.2014 Significance: 0.001
 
-Call:
-mantel.partial(xdis = RCbray, ydis = geo_dist, zdis = env_dist,      method = "pearson", permutations = 999) 
-
-Mantel statistic r: 0.2014 
-      Significance: 0.001 
-
-Upper quantiles of permutations (null model):
-   90%    95%  97.5%    99% 
-0.0120 0.0157 0.0193 0.0256 
-Permutation: free
-Number of permutations: 999
-
-
+Upper quantiles of permutations (null model): 90% 95% 97.5% 99% 0.0120 0.0157 0.0193 0.0256 Permutation: free Number of permutations: 999
 
 #### 8) stats of community assembly processes
 
@@ -6833,7 +6626,9 @@ round(qp2$ratio, digits=3)*100
 #0.347026
 #round 34.7%
 ```
+
 fig 6 A (sed distance)
+
 ```{r}
 full_output<-read.csv("qpen_sedimentdistance_13Feb2023.csv", header=T,row.names=1)
 i=1
@@ -6852,11 +6647,10 @@ print(signif(sub$percent, digits=3)*100)
 
 ```
 
-
-Within an individual sediment core, samples <= 2.5 cm apart were either homogenized (69.9%) or differentiated by selection (5.9%), regardless of horizon. As the distance between samples increased, homogenous selection declined and variable selection increased (Fig. 6, A). At sediment distances >18 cm (18-22 and 22-26 cm), where all pairs of samples were compared across zones, variable selection predominated (34.4-43.2%), Homogenizing dispersal was highest between comparisons 0-7 cm apart (15.9-18.9%), and declined to 4.7% with increasing sediment distance. Dispersal limitation increased with sediment distance, reaching 26.8% at 22-26 cm. Drift played a minor role (<10%) across all sediment distances. 
-
+Within an individual sediment core, samples \<= 2.5 cm apart were either homogenized (69.9%) or differentiated by selection (5.9%), regardless of horizon. As the distance between samples increased, homogenous selection declined and variable selection increased (Fig. 6, A). At sediment distances \>18 cm (18-22 and 22-26 cm), where all pairs of samples were compared across zones, variable selection predominated (34.4-43.2%), Homogenizing dispersal was highest between comparisons 0-7 cm apart (15.9-18.9%), and declined to 4.7% with increasing sediment distance. Dispersal limitation increased with sediment distance, reaching 26.8% at 22-26 cm. Drift played a minor role (\<10%) across all sediment distances.
 
 figure 6 B and C
+
 ```{r}
 full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_8Feb2023.csv", header=T, row.names = 1)
 
@@ -6892,11 +6686,13 @@ signif(mean(full_output[full_output$dist=="Environmental dissimilarity" & full_o
 # [1] 8.01
 # [1] 19.8
 ```
-Manuscript text: 
+
+Manuscript text:
 
 Homogenous selection was dominant among comparisons within the same horizon in any given lake (mean across horizons, 60.3%), while variable selection accounted for 9.5%, homogenizing dispersal 19.8%, and dispersal limitation 8.0% of such intra-lake, intra-horizon comparisons (Fig. 6, B and C).
 
 inter-lake comparisons (averaged across environmental distance and geographic distance)
+
 ```{r}
 
 '%!in%' <- function(x,y)!('%in%'(x,y))
@@ -6914,29 +6710,18 @@ print(signif(range(sub$percent),digits=3)*100)
 
 
 ```
-[1] "A_Variable selection"
-[1] 16.9
-[1]  4.02 34.60
 
-[1] "B_Homogeneous selection"
-[1] 47.3
-[1] 23.2 71.7
+[1] "A_Variable selection" [1] 16.9 [1] 4.02 34.60
 
-[1] "C_Drift"
-[1] 2.85
-[1]  0.0 11.1
+[1] "B_Homogeneous selection" [1] 47.3 [1] 23.2 71.7
 
-[1] "D_Homogenizing dispersal"
-[1] 1.29
-[1] 0.00 7.23
+[1] "C_Drift" [1] 2.85 [1] 0.0 11.1
 
-[1] "E_Dispersal limitation"
-[1] 31.6
-[1] 15.8 46.3
+[1] "D_Homogenizing dispersal" [1] 1.29 [1] 0.00 7.23
 
+[1] "E_Dispersal limitation" [1] 31.6 [1] 15.8 46.3
 
-As environmental dissimilarity and geographic distance increased with inter-lake comparisons, homogenizing dispersal declined while variable selection and dispersal limitation increased, however homogeneous selection was often the most dominant community assembly process in all horizons. Homogeneous selection ranged from 23.2-71.7% (avg. 47.3%), variable selection  4.0-34.6% (avg. 16.9%), and dispersal limitation 15.8-46.3% (avg. 31.6%). Homogenizing dispersal (mass effects) and drift acting alone was negligible (avg. 1.3 and 2.9%, respectively) across comparisons of abiotic lake environments and geographic distances.
-
+As environmental dissimilarity and geographic distance increased with inter-lake comparisons, homogenizing dispersal declined while variable selection and dispersal limitation increased, however homogeneous selection was often the most dominant community assembly process in all horizons. Homogeneous selection ranged from 23.2-71.7% (avg. 47.3%), variable selection 4.0-34.6% (avg. 16.9%), and dispersal limitation 15.8-46.3% (avg. 31.6%). Homogenizing dispersal (mass effects) and drift acting alone was negligible (avg. 1.3 and 2.9%, respectively) across comparisons of abiotic lake environments and geographic distances.
 
 ```{r}
 full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_8Feb2023.csv", header=T, row.names = 1)
@@ -6958,19 +6743,12 @@ print(signif(mean(sub2$percent),digits=3)*100)
 print(signif(range(sub2$percent),digits=3)*100)
 }}
 ```
-[1] "B_Homogeneous selection"
-[1] "A"
-[1] 37.7
 
-[1] "B_Homogeneous selection"
-[1] "B"
-[1] 44.8
+[1] "B_Homogeneous selection" [1] "A" [1] 37.7
 
-[1] "B_Homogeneous selection"
-[1] "C"
-[1] 59.4
+[1] "B_Homogeneous selection" [1] "B" [1] 44.8
 
-
+[1] "B_Homogeneous selection" [1] "C" [1] 59.4
 
 ```{r}
 full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_8Feb2023.csv", header=T, row.names = 1)
@@ -6988,7 +6766,6 @@ print(sub2$zone[1])
 print(signif(range(sub2$percent),digits=3)*100)
 }
 ```
-
 
 ```{r}
 full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_8Feb2023.csv", header=T, row.names = 1)
@@ -7017,14 +6794,8 @@ print(signif(mean(hs_vs),digits=3))
 print(signif(range(hs_vs),digits=3)) 
 
 ```
-[1] "C"
-[1] "hs_de"
-[1] 2.19
-[1] 1.26 4.53
-[1] "hs_vs"
-[1] 6.71
-[1]  3.34 14.20
 
+[1] "C" [1] "hs_de" [1] 2.19 [1] 1.26 4.53 [1] "hs_vs" [1] 6.71 [1] 3.34 14.20
 
 #### 9) community assembly of deeper samples
 
@@ -7053,12 +6824,8 @@ EAP_plot
 dev.off()
 ```
 
-
-
-
-
-
 ## 22. trends in trophic status of 8 lakes
+
 ```{r}
 troph<-read.csv("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/WYLakeSedMicrobes/JordansLakesTrophicStatus.csv", header=T,row.names=1)
 
@@ -7074,13 +6841,10 @@ gg<-ggplot(troph, aes(x=as.numeric(as.POSIXct(date, format="%m/%d/%y")), y=pred_
 gg
 ```
 
-
-
-
-
 ## 23. shared ESVs and shared families
 
 will all reads
+
 ```{r}
 require(Matrix)
 require(metagMisc)
@@ -7190,7 +6954,6 @@ shared$geo_dist_km<-shared$geo_dist/1000
 #write.csv(shared,"sharedESVs_7Feb2023.csv")
 ```
 
-
 ```{r}
 #comps_backup<-read.csv("sharedESVs_7Feb2023.csv",header=T,row.names=1)
 
@@ -7274,7 +7037,6 @@ if(summary(lm(comps$percent~comps$abs_cm))$coefficients[2,4]<0.05){
 dev.off()
 ```
 
-
 ## 24. Make ESV table with taxonomy and actual sequences for Eric Capo
 
 ```{r}
@@ -7304,6 +7066,7 @@ write.csv(ESV_taxa_seq, "20230316_Seq_Taxa_ESV.csv")
 ```
 
 ## 25. esvs unique to a core
+
 ```{r}
 
 
@@ -7340,4 +7103,3 @@ num_unique<-c(num_unique,table(lake_taxa_present[[j]]%in% allelse)[1])
 range(num_unique/91957)
 mean(num_unique/91957)
 ```
-
