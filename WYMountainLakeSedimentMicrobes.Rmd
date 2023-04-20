@@ -1,50 +1,26 @@
 ---
 title: "WY Lake Sediment Prokaryotic Community Analyses"
 author: "Jordan Von Eggers"
-date: "13 Jan 2023"
+date: "20 Apr 2023"
 output: html_document
 ---
 
 #request resources in Beartooth
 ```{bash}
-salloc --mem=50GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=4:00:00
+salloc --mem=100GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=4:00:00
 ```
 
-- Only one truly replicated sample (LB0208L1 and LB0208L2)
--SIMPER analysis between warm and cool lakes
--co-occurance network
-
-
-Assigning taxonomy was done with the following code in Teton:
-
-Notes on taxonomy and OTU tables 
-notes on tax_tab_silva
-        a. used zotus.nonchimeric.fa file to make the uniqueOTUs_16S.fa file
-            cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa
-            *JVE this is where that extra number comes in.. I likely didn't need to do this at all since it was dereplicated in the previous script. But at least i know it matches it looks like it de
-        b. created in Teton using: vsearch -sintax uniqueOTUs_16S.fa -db /project/microbiome/ref_db/silva_16s_v123.fa -tabbedout taxonomy_16S_v2.txt -strand both -sintax_cutoff 0.8 --threads 32
-        c. note the reference database used (silva_16s_v123.fa) for manuscript method writing!!
-        d. still need to touch base with Alex on the preferences set to create OTU tables (should be in the Bioinformatics v3 page on Confluence, but need to double check these were all the correct parameters used for manuscript methods)
-
-Files from: 
-/project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
-
-
-Notes: 
+General notes:
 - Round lake didn’t have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn’t too much different (around 20 deg C), so I used 20.1 as the temperature
 - mV for sample SR0122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) – but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something
+- Only one truly replicated sample (LB0208L1 and LB0208L2)
 
-        
-# Part I: Data Cleaning
-note: if going to rerun, make sure that there continues to have the object 'lessthan1' be 'integer (empty)' on lines 869, 1068 and 1206
-
-## 1. remove unassigned, or incorrect OTUs
+# Part I: Grab files off Beartooth supercomputer and assign taxonomy
 
 copy the bash file used to make the files above! (from Alex Buerkle)
 move to folder: /Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton
 ```{bash}
 rsync jvonegge@teton.uwyo.edu:/project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/run_slurm_mkotu.pl /Users/jordanscheibe/Desktop
-
 
 #from: run_slurm_mkotu.pl - this is from april 28 (I assume) so likely the final one! and all the files are here so I can conclude it is this one
 foreach my $tfmdirectory (sort keys %allprojectsotu){
@@ -65,6 +41,47 @@ foreach my $tfmdirectory (sort keys %allprojectsotu){
 }
 
 ```
+
+
+copy orginal files from the Micro Project to my folders
+but just grab:
+1. otutable.esv
+2. zotus_nonchimeric.fa
+```{bash}
+cd /project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
+cp * /project/seddna/jvonegge/WY_lake_microbes/16S/original_files
+```
+move all the other files aside from those two into an "other" folder
+
+
+copy in just the fasta version of the SILVA 138.1 database (the NR99 that is reccomended) because ARB is really hard to install and probably unnecessary
+Additionally, this includes version uses a combination of SILVA and GTDB
+```{bash}
+rsync /Users/jordanscheibe/Desktop/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+```
+
+
+Assigning taxonomy was done with the following code in Beartooth
+```{bash}
+
+        <!-- a. used zotus.nonchimeric.fa file to make the uniqueOTUs_16S.fa file -->
+        <!--     cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa -->
+        <!--     JVE this is where that extra number comes in.. I likely didn't need to do this at all since it was dereplicated in the previous script. But at least i know it matches it looks like it  -->
+            
+            
+vsearch -sintax uniqueOTUs_16S.fa -db /project/microbiome/ref_db/silva_16s_v123.fa -tabbedout taxonomy_16S_v2.txt -strand both -sintax_cutoff 0.8 --threads 32
+
+        c. note the reference database used (silva_16s_v123.fa) for manuscript method writing!!
+        d. still need to touch base with Alex on the preferences set to create OTU tables (should be in the Bioinformatics v3 page on Confluence, but need to double check these were all the correct parameters used for manuscript methods)
+```
+
+
+
+        
+# Part 2: Data Cleaning
+note: if going to rerun, make sure that there continues to have the object 'lessthan1' be 'integer (empty)' on lines 869, 1068 and 1206
+
+## 1. remove unassigned, or incorrect OTUs
 
 ### a. read in taxa table
 ```{r}
