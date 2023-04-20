@@ -7,7 +7,7 @@ output: html_document
 
 #request resources in Beartooth
 ```{bash}
-salloc --mem=100GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=4:00:00
+salloc --mem=110GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
 ```
 
 General notes:
@@ -54,28 +54,66 @@ cp * /project/seddna/jvonegge/WY_lake_microbes/16S/original_files
 move all the other files aside from those two into an "other" folder
 
 
-copy in just the fasta version of the SILVA 138.1 database (the NR99 that is reccomended) because ARB is really hard to install and probably unnecessary
+copy in just the fasta version of the SILVA 138.1 database (the NR99 that is recommended) because ARB is really hard to install and probably unnecessary
 Additionally, this includes version uses a combination of SILVA and GTDB
 ```{bash}
 rsync /Users/jordanscheibe/Desktop/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+
+#unzip this megafile!
+gunzip SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
 ```
 
 
 Assigning taxonomy was done with the following code in Beartooth
+
+assign_tax.sh is using this uniqueOTUs_16s.fa file
+
+
 ```{bash}
+cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa
+```
 
-        <!-- a. used zotus.nonchimeric.fa file to make the uniqueOTUs_16S.fa file -->
-        <!--     cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa -->
-        <!--     JVE this is where that extra number comes in.. I likely didn't need to do this at all since it was dereplicated in the previous script. But at least i know it matches it looks like it  -->
-            
-            
-vsearch -sintax uniqueOTUs_16S.fa -db /project/microbiome/ref_db/silva_16s_v123.fa -tabbedout taxonomy_16S_v2.txt -strand both -sintax_cutoff 0.8 --threads 32
+assign_tax.sh
+```{bash}
+#!/bin/bash
+#SBATCH --job-name assign_taxonomy
+#SBATCH --mem=110GB
+#SBATCH --time=3:00:00
+#SBATCH --cpus-per-task=32
+#SBATCH --account=microbiome
+#SBATCH --output=assign_taxonomy_%A.out
 
-        c. note the reference database used (silva_16s_v123.fa) for manuscript method writing!!
-        d. still need to touch base with Alex on the preferences set to create OTU tables (should be in the Bioinformatics v3 page on Confluence, but need to double check these were all the correct parameters used for manuscript methods)
+module load arcc/1.0  gcc/12.2.0
+module load vsearch/2.22.1
+
+vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32
+
+echo "vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32"
+```
+
+assign_tax_zotus.sh uses the zotus_nonchimeric.fa file that was dereplicated a second time and then added this additional number in the centroid rather than OTU number.. I want to use this one if I can. 
+
+assign_tax_zotus.sh
+```{bash}
+#!/bin/bash
+#SBATCH --job-name assign_taxonomy_zotus
+#SBATCH --mem=110GB
+#SBATCH --time=3:00:00
+#SBATCH --cpus-per-task=32
+#SBATCH --account=microbiome
+#SBATCH --output=assign_taxonomy_zotus_%A.out
+
+module load arcc/1.0  gcc/12.2.0
+module load vsearch/2.22.1
+
+vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S_zotus.txt -strand both -sintax_cutoff 0.8 -threads 32
+
+echo "vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S_zotus.txt -strand both -sintax_cutoff 0.8 -threads 32"
 ```
 
 
+
+#LEFT OFF HERE
 
         
 # Part 2: Data Cleaning
@@ -1432,7 +1470,7 @@ rm(otu_table)
 
 
 
-# Part II: Create Phyloseq
+# Part III: Create Phyloseq
 ## 1. Update and save the metadata file
 ```{r}
 #update the EG sample name

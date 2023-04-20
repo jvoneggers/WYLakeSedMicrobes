@@ -27,3 +27,5 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 WYLakeSedMicrobes.Rproj
+otutable.esv
+taxonomy_16S_zotus.txt
