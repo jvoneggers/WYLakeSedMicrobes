@@ -10,7 +10,7 @@ editor_options:
 #request resources in Beartooth
 
 ```{bash}
-salloc --mem=110GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
+salloc --mem=80GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
 ```
 
 General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR0122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
@@ -53,87 +53,70 @@ cp * /project/seddna/jvonegge/WY_lake_microbes/16S/original_files
 
 move all the other files aside from those two into an "other" folder
 
-copy in just the fasta version of the SILVA 138.1 database (the NR99 that is recommended) because ARB is really hard to install and probably unnecessary Additionally, this includes version uses a combination of SILVA and GTDB
-
-```{bash}
-rsync /Users/jordanscheibe/Desktop/SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
-
-#unzip this megafile!
-gunzip SILVA_138.1_SSURef_NR99_tax_silva.fasta.gz
-```
-
 ## 2. Assigning taxonomy
 
 done with the following code in Beartooth
 
-<!-- assign_tax.sh is using this uniqueOTUs_16s.fa file -->
+download the two Silva138 full-length taxonomy and sequence files from mothur's website https://docs.qiime2.org/2023.2/data-resources/#marker-gene-reference-databases
 
-<!-- ```{bash} -->
+added them to the supercomputer and used code online https://github.com/torognes/vsearch/issues/438 to format into vsearch. 
 
-<!-- cat zotus_nonchimeric.fa | vsearch --derep_fulllength - --output - --sizeout --sizein | perl -pe 's/^(>centroid=)/$1$._/' > uniqueOTUs_16S.fa -->
+I did try downloading the Silva 138 fasta file from the website and renaming them (along with using rescript, dada2, qiime/mothur) but as the github vsearch issue talks about, it varies so much that it was nice to have a dataset with the simplified taxonomies into 7 columns. I also could have used the shortened version for the 515F/806R region, but used full length instead. 
 
-<!-- ``` -->
+```{bash}
 
-<!-- assign_tax.sh -->
+rsync /Users/jordanscheibe/Desktop/silva-138-99-tax.qza jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
 
-<!-- ```{bash} -->
+rsync /Users/jordanscheibe/Desktop/silva-138-99-seqs.qza jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
 
-<!-- #!/bin/bash -->
+#unzip these files, and go into the folders and grab out the taxonomy.tsv and the dna-sequences.fasta files and put them in one folder together
+        
+        
+awk 'NR>1' taxonomy.tsv \
+| sed 's/; /,/g' | sed 's/__/:/g' | sed 's/ /_/g' | sed 's/\t/;tax=/' | sed 's/^/>/' \
+> txx
 
-<!-- #SBATCH --job-name assign_taxonomy -->
+awk 'NR==1 {print ; next} {printf /^>/ ? "\n"$0"\n" : $1} END {printf "\n"}' dna-sequences.fasta \
+| awk 'NR%2==0' \
+| paste -d'\n' txx - \
+| gzip > SILVA138_RESCRIPt.fasta.gz
 
-<!-- #SBATCH --mem=110GB -->
+rm txx      
+#likely don't need to zip this
+```
 
-<!-- #SBATCH --time=3:00:00 -->
-
-<!-- #SBATCH --cpus-per-task=32 -->
-
-<!-- #SBATCH --account=microbiome -->
-
-<!-- #SBATCH --output=assign_taxonomy_%A.out -->
-
-<!-- module load arcc/1.0  gcc/12.2.0 -->
-
-<!-- module load vsearch/2.22.1 -->
-
-<!-- vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32 -->
-
-<!-- echo "vsearch -sintax uniqueOTUs_16S.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S.txt -strand both -sintax_cutoff 0.8 -threads 32" -->
-
-<!-- ``` -->
-
-<!-- Classified 121269 of 123905 sequences (97.87%) -->
 
 assign_tax_zotus.sh uses the zotus_nonchimeric.fa file that was dereplicated a second time and then added this additional number in the centroid rather than OTU number.. I want to use this one.
 
-assign_tax_zotus.sh
+assign_tax_zotus_silva138_rescript.sh
 
 ```{bash}
 #!/bin/bash
-#SBATCH --job-name assign_taxonomy_zotus
+#SBATCH --job-name assign_taxonomy_zotus_silva138
 #SBATCH --mem=110GB
 #SBATCH --time=3:00:00
 #SBATCH --cpus-per-task=32
 #SBATCH --account=microbiome
-#SBATCH --output=assign_taxonomy_zotus_%A.out
+#SBATCH --output=assign_taxonomy_zotus_silva138_%A.out
 
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/
+ 
 module load arcc/1.0  gcc/12.2.0
 module load vsearch/2.22.1
 
-vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S_zotus.txt -strand both -sintax_cutoff 0.8 -threads 32
+vsearch -sintax zotus_nonchimeric.fa -db /project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/SILVA138_RESCRIPt.fasta -tabbedout taxonomy_16S_zotus_SILVA138_rescript.txt -strand both -sintax_cutoff 0.8 -threads 32
 
-echo "vsearch -sintax zotus_nonchimeric.fa -db ../reference_database/SILVA_138.1_SSURef_NR99_tax_silva.fasta -tabbedout taxonomy_16S_zotus.txt -strand both -sintax_cutoff 0.8 -threads 32"
+echo "ran the following: 
+vsearch -sintax zotus_nonchimeric.fa -db /project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/SILVA138_RESCRIPt.fasta -tabbedout taxonomy_16S_zotus_SILVA138_rescript.txt -strand both -sintax_cutoff 0.8 -threads 32"
 ```
 
-Classified 121265 of 123908 sequences (97.87%)
+LEFT OFF HERE
 
-copy just this taxonomy_16S_zotus.txt onto my computer along with the other esv table file we need
+copy just this taxonomy_16S_zotus_SILVA138.txt onto my computer along with the other esv table file we need
 
 ```{bash}
-rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S_zotus_SILVA138_rescript.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
 
-rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S_zotus.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
-#this file comes back as empty...
 
 rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/original_files/otutable.esv /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
 ```
