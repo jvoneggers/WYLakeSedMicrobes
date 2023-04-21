@@ -28,5 +28,4 @@ vignettes/*.pdf
 .Renviron
 WYLakeSedMicrobes.Rproj
 otutable.esv
-taxonomy_16S_zotus.txt
-taxonomy_16S.txt
+
