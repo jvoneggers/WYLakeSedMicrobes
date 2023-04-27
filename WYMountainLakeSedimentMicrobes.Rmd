@@ -13,7 +13,7 @@ editor_options:
 salloc --mem=80GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
 ```
 
-General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR0122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
+General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR20122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
 
 # Part I: Extract files and assign taxonomy
 
@@ -55,71 +55,61 @@ move all the other files aside from those two into an "other" folder
 
 ## 2. Assigning taxonomy
 
-done with the following code in Beartooth
+Using the maintained datasets from DADA2 hosted on Zenodo
 
-download the two Silva138 full-length taxonomy and sequence files from mothur's website https://docs.qiime2.org/2023.2/data-resources/#marker-gene-reference-databases
+McLaren, Michael R., & Callahan, Benjamin J. (2021). Silva 138.1 prokaryotic SSU taxonomic training data formatted for DADA2 [Data set]. Zenodo. https://doi.org/10.5281/zenodo.4587955
 
-added them to the supercomputer and used code online https://github.com/torognes/vsearch/issues/438 to format into vsearch. 
+First, read in the fasta file with sequences, remove three duplicates (that aren't in the OTU table) and assign taxonomy using DADA2
+```{r}
+require(dada2)
+require(Biostrings)
+require(stringr)
+fasta <- readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa")
 
-I did try downloading the Silva 138 fasta file from the website and renaming them (along with using rescript, dada2, qiime/mothur) but as the github vsearch issue talks about, it varies so much that it was nice to have a dataset with the simplified taxonomies into 7 columns. I also could have used the shortened version for the 515F/806R region, but used full length instead. 
+# I know there are 3 duplicates in this file, so checking if they are in the OTU table (they aren't), then deleting them
+dups<-as.data.frame(fasta[duplicated(fasta)])
 
-```{bash}
+dups<-as.data.frame(fasta[which(as.character(fasta)%in% dups$x)])
+removefromfasta<-rownames(dups)[4:6]
 
-rsync /Users/jordanscheibe/Desktop/silva-138-99-tax.qza jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+#quickly read in the OTU table - when we subset by these duplicates, we find that the duplicated sequences aren't in here, so not a problem, we will just remove them from the zotus_nonchimeric.fa file
+otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
+dups$centroid<-str_split(rownames(dups),pattern = ";", 3, simplify = T)[,1]
+dup_otu<-otu_table[which(otu_table$OTUID %in% dups$centroid),]
+rm(otu_table)
+rm(dups)
+rm(dup_otu)
 
-rsync /Users/jordanscheibe/Desktop/silva-138-99-seqs.qza jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+fasta<-fasta[!names(fasta) %in% removefromfasta]
+rm(removefromfasta)
 
-#unzip these files, and go into the folders and grab out the taxonomy.tsv and the dna-sequences.fasta files and put them in one folder together
-        
-        
-awk 'NR>1' taxonomy.tsv \
-| sed 's/; /,/g' | sed 's/__/:/g' | sed 's/ /_/g' | sed 's/\t/;tax=/' | sed 's/^/>/' \
-> txx
+#Assign taxonomy
+#This command takes a few hours
+#with species
+tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_wSpecies_train_set.fa.gz")
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
 
-awk 'NR==1 {print ; next} {printf /^>/ ? "\n"$0"\n" : $1} END {printf "\n"}' dna-sequences.fasta \
-| awk 'NR%2==0' \
-| paste -d'\n' txx - \
-| gzip > SILVA138_RESCRIPt.fasta.gz
+tax_table<-merge(tax_table,df, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_27Apr2023.csv")
 
-rm txx      
-#likely don't need to zip this
+#without species (just to genus)
+tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_train_set.fa.gz")
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
+
+tax_table<-merge(tax_table,df, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+write.csv(tax_table,"Silva138_assignedTaxonomy_toGenus_27Apr2023.csv")
 ```
 
-
-assign_tax_zotus.sh uses the zotus_nonchimeric.fa file that was dereplicated a second time and then added this additional number in the centroid rather than OTU number.. I want to use this one.
-
-assign_tax_zotus_silva138_rescript.sh
-
-```{bash}
-#!/bin/bash
-#SBATCH --job-name assign_taxonomy_zotus_silva138
-#SBATCH --mem=110GB
-#SBATCH --time=3:00:00
-#SBATCH --cpus-per-task=32
-#SBATCH --account=microbiome
-#SBATCH --output=assign_taxonomy_zotus_silva138_%A.out
-
-cd /project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/
- 
-module load arcc/1.0  gcc/12.2.0
-module load vsearch/2.22.1
-
-vsearch -sintax zotus_nonchimeric.fa -db /project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/SILVA138_RESCRIPt.fasta -tabbedout taxonomy_16S_zotus_SILVA138_rescript.txt -strand both -sintax_cutoff 0.8 -threads 32
-
-echo "ran the following: 
-vsearch -sintax zotus_nonchimeric.fa -db /project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/SILVA138_RESCRIPt.fasta -tabbedout taxonomy_16S_zotus_SILVA138_rescript.txt -strand both -sintax_cutoff 0.8 -threads 32"
-```
-
-LEFT OFF HERE
-
-copy just this taxonomy_16S_zotus_SILVA138.txt onto my computer along with the other esv table file we need
-
-```{bash}
-rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/taxonomy_16S_zotus_SILVA138_rescript.txt /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
-
-
-rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/original_files/otutable.esv /Users/jordanscheibe/Desktop/WYLakeSedMicrobes
-```
 
 # Part 2: Data Cleaning
 
@@ -130,71 +120,10 @@ note: if going to rerun, make sure that there continues to have the object 'less
 ### a. read in taxa table
 
 ```{r}
-require(stringr)
-require(dplyr)
-tax_tab_silva <- as.matrix(read.table("taxonomy_16S_zotus.txt", header=F, row.names=1, check.names=F, na.strings="", sep="\t"))
+tax_table<-read.csv("Silva138_assignedTaxonomy_toGenus_27Apr2023.csv", header=T)
+length(unique(tax_table$X))
+duplicated
 
-test<-read.table("taxonomy_16S_zotus.txt")
-
-tax_tab_silva <- as.matrix(read.table("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/WYLakeSedMicrobes/Calder_vsearch/16S/original files off Teton/taxonomy_16S_silvav123.txt", header=F, row.names=1, check.names=F, na.strings="", sep="\t"))
-
-
-#wrangle names of tax table to only include centroid ID
-#split the rownames by ";" and pull out only the "centroidXXX" info. 
-tax_names<-str_split(rownames(tax_tab_silva),pattern = ";", 3, simplify = T)[,1]
-#if you have an additional number like 'centroid=21_otu7'and you just want 'centroid=otu7' so that it matches your OTU table and prevents errors when you create a phyloseq object
-tax_names<-as.data.frame(cbind(rep("centroid=",length(tax_names)),str_split(tax_names,pattern = "_", 2, simplify = T)[,2]))
-tax_names<-paste(tax_names[,1],tax_names[,2],sep="")
-
-
-#again, this is just to check that the new sample names match up. 
-#I created a new dataframe and do the actual check in the lines below.
-# All values should equal true if the new names are in the correct spot. 
-tax_tab_silva2<-tax_tab_silva
-
-#rename rows with the extracted tax_names
-
-rownames(tax_tab_silva2)<-tax_names
-
-#do the check. Again, all should equal true. 
-tax_names<-str_split(rownames(tax_tab_silva),pattern = ";", 3, simplify = T)[,1]
-tax_names<-as.data.frame(cbind(rep("centroid=",length(tax_names)),str_split(tax_names,pattern = "_", 2, simplify = T)[,2]))
-tax_names<-paste(tax_names[,1],tax_names[,2],sep="")
-
-table(rownames(tax_tab_silva2) == tax_names)
-
-#extract only the taxonomy column
-
-tax_tab_silva2<-data.frame(tax_tab_silva2[,3])
-
-#convert long string of taxonomy to individual columns. simplify = T 
-#is great because it saves it as a matrix with values in indvidual columns. 
-taxonomy_names<-data.frame(str_split(tax_tab_silva2$tax_tab_silva2...3.,pattern = ",", 7, simplify = T))
-
-#Bind centroid names and taxonomy
-tax_tab_silva2<-cbind(tax_tab_silva2, taxonomy_names)
-
-#rename columns
-names(tax_tab_silva2)<-c("Tax", "Kingdom", "Phylum", "Class", "Order", "Family", "Genus", "Species")
-
-#remove original taxonomy string
-tax_tab_silva2$Tax=NULL
-
-#replace "" with NA
-tax_tab_silva2<-na_if(tax_tab_silva2, "")
-
-#this number of OTUs is not the same as the starting number of OTUs in the ESV table, but deemed ok/close enough (123867)
-tax_tab_silva2
-
-#convert to matrix
-tax_tab_silva<-as.matrix(tax_tab_silva2)
-
-
-
-#remove extra objects
-rm(tax_tab_silva2)
-rm(taxonomy_names)
-rm(tax_names)
 ```
 
 ### b. remove unassigned domain, chloroplast, and mitochondira
@@ -209,56 +138,6 @@ unassigned_domain<-which(is.na(df$Kingdom))
 
 df1<-df[-unassigned_domain,]
 
-#remove Chloroplast in class
-chloro<-as.data.frame(which(df1 == "c:Chloroplast", arr.ind = TRUE))[,1]
-chloro2<-as.data.frame(which(df1 == "c:Chloroplast", arr.ind = TRUE))
-
-df2<-df1[-chloro,]
-nrow(df1)-nrow(df2) #exact number of cholorplast occurrences 1046
-
-#remove Mitochondria in family
-mito<-as.data.frame(which(df2 == "f:Mitochondria", arr.ind = TRUE))[,1]
-mito2<-as.data.frame(which(df2 == "f:Mitochondria", arr.ind = TRUE))
-
-df3<-df2[-mito,]
-nrow(df2)-nrow(df3) #553 - exact number of mitochondrial sequences. 
-
-tax_tab_silva<-as.matrix(df3)
-#this should have 119879 taxa (rows) of 7 columns
-
-#now double check there are no lingering ones outside of class and family
-t1<-as.data.frame(which(df == "f:Mitochondria", arr.ind = TRUE))
-t2<-as.data.frame(which(df == "d:Mitochondria", arr.ind = TRUE))
-t3<-as.data.frame(which(df == "p:Mitochondria", arr.ind = TRUE))
-t4<-as.data.frame(which(df == "c:Mitochondria", arr.ind = TRUE))
-t5<-as.data.frame(which(df == "o:Mitochondria", arr.ind = TRUE))
-t6<-as.data.frame(which(df == "g:Mitochondria", arr.ind = TRUE))
-t7<-as.data.frame(which(df == "s:Mitochondria", arr.ind = TRUE))
-#only found in family
-rm(t1)
-rm(t2)
-rm(t3)
-rm(t4)
-rm(t5)
-rm(t6)
-rm(t7)
-
-#for chloroplast
-t1<-as.data.frame(which(df == "f:Chloroplast", arr.ind = TRUE))
-t2<-as.data.frame(which(df == "d:Chloroplast", arr.ind = TRUE))
-t3<-as.data.frame(which(df == "p:Chloroplast", arr.ind = TRUE))
-t4<-as.data.frame(which(df == "c:Chloroplast", arr.ind = TRUE))
-t5<-as.data.frame(which(df == "o:Chloroplast", arr.ind = TRUE))
-t6<-as.data.frame(which(df == "g:Chloroplast", arr.ind = TRUE))
-t7<-as.data.frame(which(df == "s:Chloroplast", arr.ind = TRUE))
-#only found in family
-rm(t1)
-rm(t2)
-rm(t3)
-rm(t4)
-rm(t5)
-rm(t6)
-rm(t7)
 
 
 #remove the rest of the objects
@@ -283,33 +162,7 @@ nrow(tax_tab_silva)
 ### c. remove : in taxomony table
 
 ```{r}
-require(rlist)
-newframe<-list()
-for(i in 1:7){
-        newframe[i]<-as.data.frame(str_split_fixed(tax_tab_silva[,i], ":", n=2)[,2])
-}       
-taxa_tab<-list.cbind(newframe)
 
-rm(newframe)
-rm(i)
-
-#check this worked
-Kingdom<-as.data.frame(str_split_fixed(tax_tab_silva[,1], ":", n=2)[,2])
-Species<-as.data.frame(str_split_fixed(tax_tab_silva[,7], ":", n=2)[,2])
-table(taxa_tab[,1]==Kingdom)
-table(taxa_tab[,7]==Species)
-rm(Kingdom)
-rm(Species)
-
-#both of these are true, now just need to add rownames and column names to the matrix
-taxa_tab<-as.data.frame(taxa_tab)
-colnames(taxa_tab)<-colnames(tax_tab_silva)
-rownames(taxa_tab)<-rownames(tax_tab_silva)
-taxa_tab<-as.matrix(taxa_tab)
-table(rownames(taxa_tab)==rownames(tax_tab_silva))
-table(colnames(taxa_tab)==colnames(tax_tab_silva))
-
-rm(tax_tab_silva)
 ```
 
 cleaned taxa table (from NAs, chloroplast and mitochondria, with the colons removed is now called taxa_tab)
@@ -319,7 +172,7 @@ cleaned taxa table (from NAs, chloroplast and mitochondria, with the colons remo
 from folder on Teton, now Beartooth /project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
 
 ```{r}
-otu_table<-read.delim("/Users/jordanscheibe/OneDrive - University of Wyoming/LakeSedDNA/Data/Sequence Data/Calder_vsearch/16S/original files off Teton/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
+otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
 #change the OTU name to be a row name
 rownames(otu_table)<-otu_table$OTUID
 otu_table$OTUID<-NULL
