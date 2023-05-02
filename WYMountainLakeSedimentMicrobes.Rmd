@@ -51,9 +51,21 @@ cd /project/microbiome/data/seq/psomagen_17sep20_novaseq2/otu/16S/Calder
 cp * /project/seddna/jvonegge/WY_lake_microbes/16S/original_files
 ```
 
+
+```{r}
+rsync -r jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/original_files /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
+
+```
+
 move all the other files aside from those two into an "other" folder
 
 ## 2. Assigning taxonomy
+
+
+```{r}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/silva_nr99_v138.1_wSpecies_train_set.fa.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+PrayingMantus@0613@
+```
 
 Using the maintained datasets from DADA2 hosted on Zenodo
 
@@ -61,6 +73,7 @@ McLaren, Michael R., & Callahan, Benjamin J. (2021). Silva 138.1 prokaryotic SSU
 
 First, read in the fasta file with sequences, remove three duplicates (that aren't in the OTU table) and assign taxonomy using DADA2
 ```{r}
+
 require(dada2)
 require(Biostrings)
 require(stringr)
@@ -73,9 +86,9 @@ dups<-as.data.frame(fasta[which(as.character(fasta)%in% dups$x)])
 removefromfasta<-rownames(dups)[4:6]
 
 #quickly read in the OTU table - when we subset by these duplicates, we find that the duplicated sequences aren't in here, so not a problem, we will just remove them from the zotus_nonchimeric.fa file
-otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
-dups$centroid<-str_split(rownames(dups),pattern = ";", 3, simplify = T)[,1]
-dup_otu<-otu_table[which(otu_table$OTUID %in% dups$centroid),]
+# otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
+# dups$centroid<-str_split(rownames(dups),pattern = ";", 3, simplify = T)[,1]
+# dup_otu<-otu_table[which(otu_table$OTUID %in% dups$centroid),]
 rm(otu_table)
 rm(dups)
 rm(dup_otu)
@@ -86,30 +99,94 @@ rm(removefromfasta)
 #Assign taxonomy
 #This command takes a few hours
 #with species
-tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_wSpecies_train_set.fa.gz")
-ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
-ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
-ESVseq$names<-NULL
+ 
 
-tax_table<-merge(tax_table,df, by="seq")
-tax_table$seq<-NULL
-rownames(tax_table)<-tax_table$ESV
-tax_table$ESV<-NULL
-write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_27Apr2023.csv")
-
-#without species (just to genus)
-tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_train_set.fa.gz")
-ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
-ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
-ESVseq$names<-NULL
-
-tax_table<-merge(tax_table,df, by="seq")
-tax_table$seq<-NULL
-rownames(tax_table)<-tax_table$ESV
-tax_table$ESV<-NULL
-write.csv(tax_table,"Silva138_assignedTaxonomy_toGenus_27Apr2023.csv")
+# #without species (just to genus)
+# tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_train_set.fa.gz")
+# ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+# ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+# ESVseq$names<-NULL
+# 
+# tax_table<-merge(tax_table,df, by="seq")
+# tax_table$seq<-NULL
+# rownames(tax_table)<-tax_table$ESV
+# tax_table$ESV<-NULL
+# write.csv(tax_table,"Silva138_assignedTaxonomy_toGenus_27Apr2023.csv")
 ```
 
+runR_assignTaxonomy_dada2.sh
+```{bash}
+
+#!/bin/bash
+#SBATCH --job-name assign_tax_dada2
+#SBATCH --mem=100GB
+#SBATCH --time=3-00:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --account=microbiome
+#SBATCH --output=assign_tax_dada2_%A.out
+hostname; date
+module load miniconda3/4.12.0
+source activate dada2_env
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/dada2
+srun Rscript assignTaxonomy_dada2.R
+echo "srun Rscript assignTaxonomy_dada2.R"
+source deactivate dada2_env
+echo "finished assigntax JV"
+date
+```
+
+
+
+assignTaxonomy_dada2.R
+```{r}
+require(dada2)
+require(Biostrings)
+require(stringr)
+fasta <- readDNAStringSet("/project/seddna/jvonegge/WY_lake_microbes/16S/original_files/zotus_nonchimeric.fa")
+
+removefromfasta<-c("centroid=otu50237;seqs=1;size=53","centroid=otu52917;seqs=1;size=48", "centroid=otu55415;seqs=1;size=44")
+fasta<-fasta[!names(fasta) %in% removefromfasta]
+rm(removefromfasta)
+
+tax_table <- assignTaxonomy(fasta, "/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/silva_nr99_v138.1_wSpecies_train_set.fa.gz")
+write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv")
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
+
+tax_table<-merge(tax_table,df, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_28Apr2023.csv")
+
+```
+This all assigned fine to the "Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv" object and then I got an error afterwards in the outfile because of the merging (didn't change the tax_table column to "seq"), see below for correction
+
+
+copy back to computer and add in the taxa names by merging by sequenes
+```{r}
+require(dada2)
+require(Biostrings)
+require(stringr)
+fasta <- readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa")
+removefromfasta<-c("centroid=otu50237;seqs=1;size=53","centroid=otu52917;seqs=1;size=48", "centroid=otu55415;seqs=1;size=44")
+fasta<-fasta[!names(fasta) %in% removefromfasta]
+rm(removefromfasta)
+
+tax_table<-read.csv("AssignTaxonomy/Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv", header=T)
+colnames(tax_table)[1]<-"seq"
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
+
+tax_table<-merge(tax_table,ESVseq, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+#write.csv(tax_table,"AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv")
+```
+Put these into an "AssignTaxonomy" folder and then the final one in the "FinalTaxFile"
 
 # Part 2: Data Cleaning
 
@@ -120,23 +197,58 @@ note: if going to rerun, make sure that there continues to have the object 'less
 ### a. read in taxa table
 
 ```{r}
-tax_table<-read.csv("Silva138_assignedTaxonomy_toGenus_27Apr2023.csv", header=T)
-length(unique(tax_table$X))
-duplicated
-
+tax_table<-read.csv("AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv", header=T,row.names=1)
+table(tax_table$Kingdom) # showing NO Eukaryotes
+unique(tax_table$Kingdom) # when the cell is empty there is an NA
 ```
 
 ### b. remove unassigned domain, chloroplast, and mitochondira
 
 ```{r}
-#unassigned taxa at the domain level (column 1)
-table(is.na(tax_tab_silva[,1]))
+#unassigned taxa at the kingdom/domain level (column 1)
+table(is.na(tax_table[,1]))
+
 #  FALSE   TRUE 
-# 121478   2427 
+# 123794    111 
+# with the old Silva v123 database 2427 were unassigned at the kingdom/domain level, now only 111 (great!)
 df<-as.data.frame(tax_tab_silva)
 unassigned_domain<-which(is.na(df$Kingdom))
 
+
 df1<-df[-unassigned_domain,]
+
+table(tax_table[,]=="Chloroplast")
+#  FALSE   TRUE 
+# 504979   1013
+#all of these are Cyanobacteria!
+
+table(tax_table$Kingdom=="Chloroplast")
+table(tax_table$Phylum=="Chloroplast")
+table(tax_table$Class=="Chloroplast")
+table(tax_table$Order=="Chloroplast") # only here
+table(tax_table$Family=="Chloroplast")
+table(tax_table$Genus=="Chloroplast")
+table(tax_table$Species=="Chloroplast")
+
+table(tax_table[,]=="Mitochondria")
+#  FALSE   TRUE 
+# 504925   1067
+
+table(tax_table$Kingdom=="Mitochondria")
+table(tax_table$Phylum=="Mitochondria")
+table(tax_table$Class=="Mitochondria")
+table(tax_table$Order=="Mitochondria") 
+table(tax_table$Family=="Mitochondria") #only here
+table(tax_table$Genus=="Mitochondria")
+table(tax_table$Species=="Mitochondria")
+
+#Mitochondria is only found for 
+# Bacteria
+# Proteobacteria
+# Alphaproteobacteria
+# Rickettsiales
+# Mitochondria
+# but maybe they evolved together? not sure if I should throw out: https://doi.org/10.1016/S0014-5793(01)02618-7
 
 
 
@@ -145,10 +257,7 @@ rm(df3)
 rm(df2)
 rm(df1)
 rm(df)
-rm(mito2)
-rm(mito)
-rm(chloro)
-rm(chloro2)
+
 rm(unassigned_domain)
 ```
 
