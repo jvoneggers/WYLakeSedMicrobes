@@ -30,3 +30,10 @@ WYLakeSedMicrobes.Rproj
 otutable.esv
 silva_nr99_v138.1_wSpecies_train_set.fa.gz
 silva_nr99_v138.1_train_set.fa.gz
+AssignTaxonomy
+DataCleaning
+Figures
+Metadata
+WyLakeMicrobes_Phyloseq_11May2023.RData
+OriginalFiles
+.DS_Store

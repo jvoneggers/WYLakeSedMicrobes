@@ -10,10 +10,19 @@ editor_options:
 #request resources in Beartooth
 
 ```{bash}
-salloc --mem=80GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=2:00:00
+salloc --mem=20GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=3:00:00
 ```
 
 General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR20122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
+
+load packages
+```{r}
+require(stringr)
+require(tidyverse)
+require(vegan)
+require(phyloseq)
+```
+
 
 # Part I: Extract files and assign taxonomy
 
@@ -60,11 +69,10 @@ rsync -r jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_micro
 move all the other files aside from those two into an "other" folder
 
 ## 2. Assigning taxonomy
-
-
+copy the SILVA training dataset over for DADA2
 ```{r}
 rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/silva_nr99_v138.1_wSpecies_train_set.fa.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
-PrayingMantus@0613@
+
 ```
 
 Using the maintained datasets from DADA2 hosted on Zenodo
@@ -72,47 +80,10 @@ Using the maintained datasets from DADA2 hosted on Zenodo
 McLaren, Michael R., & Callahan, Benjamin J. (2021). Silva 138.1 prokaryotic SSU taxonomic training data formatted for DADA2 [Data set]. Zenodo. https://doi.org/10.5281/zenodo.4587955
 
 First, read in the fasta file with sequences, remove three duplicates (that aren't in the OTU table) and assign taxonomy using DADA2
-```{r}
 
-require(dada2)
-require(Biostrings)
-require(stringr)
-fasta <- readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa")
-
-# I know there are 3 duplicates in this file, so checking if they are in the OTU table (they aren't), then deleting them
-dups<-as.data.frame(fasta[duplicated(fasta)])
-
-dups<-as.data.frame(fasta[which(as.character(fasta)%in% dups$x)])
-removefromfasta<-rownames(dups)[4:6]
-
-#quickly read in the OTU table - when we subset by these duplicates, we find that the duplicated sequences aren't in here, so not a problem, we will just remove them from the zotus_nonchimeric.fa file
-# otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
-# dups$centroid<-str_split(rownames(dups),pattern = ";", 3, simplify = T)[,1]
-# dup_otu<-otu_table[which(otu_table$OTUID %in% dups$centroid),]
-rm(otu_table)
-rm(dups)
-rm(dup_otu)
-
-fasta<-fasta[!names(fasta) %in% removefromfasta]
-rm(removefromfasta)
-
-#Assign taxonomy
-#This command takes a few hours
-#with species
- 
-
-# #without species (just to genus)
-# tax_table <- assignTaxonomy(fasta, "silva_nr99_v138.1_train_set.fa.gz")
-# ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
-# ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
-# ESVseq$names<-NULL
-# 
-# tax_table<-merge(tax_table,df, by="seq")
-# tax_table$seq<-NULL
-# rownames(tax_table)<-tax_table$ESV
-# tax_table$ESV<-NULL
-# write.csv(tax_table,"Silva138_assignedTaxonomy_toGenus_27Apr2023.csv")
-```
+quickly read in the OTU table - when we subset by these duplicates, we find that the duplicated sequences aren't in here, so not a problem, we will just remove them from the zotus_nonchimeric.fa file
+otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t") dups$centroid<-str_split(rownames(dups),pattern = ";", 3, simplify = T)[,1]
+dup_otu<-otu_table[which(otu_table$OTUID %in% dups$centroid),]
 
 runR_assignTaxonomy_dada2.sh
 ```{bash}
@@ -197,50 +168,57 @@ note: if going to rerun, make sure that there continues to have the object 'less
 ### a. read in taxa table
 
 ```{r}
-tax_table<-read.csv("AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv", header=T,row.names=1)
-table(tax_table$Kingdom) # showing NO Eukaryotes
-unique(tax_table$Kingdom) # when the cell is empty there is an NA
+tax_tab<-read.csv("AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv", header=T,row.names=1)
+table(tax_tab$Kingdom) # showing NO Eukaryotes
+unique(tax_tab$Kingdom) # when the cell is empty there is an NA
 ```
 
-### b. remove unassigned domain, chloroplast, and mitochondira
+### b. remove unassigned domain, chloroplast, and mitochondria 
+
+Initially I removed chloroplast and mitochondria, but I think I should keep them now since chloroplast is assigned to Cyanobacteria and mitochondria to Alphaproteobacteria
+
+but then after reading chloroplasts come evolved from cyanos and mitochondria from alphaproteobacteria, but still these are found in eukaryotic cells, so need to remove
 
 ```{r}
 #unassigned taxa at the kingdom/domain level (column 1)
-table(is.na(tax_table[,1]))
+table(is.na(tax_tab[,1]))
 
 #  FALSE   TRUE 
 # 123794    111 
 # with the old Silva v123 database 2427 were unassigned at the kingdom/domain level, now only 111 (great!)
-df<-as.data.frame(tax_tab_silva)
-unassigned_domain<-which(is.na(df$Kingdom))
 
+tax_tab<-tax_tab[-which(is.na(tax_tab$Kingdom)),] # remove unassigned kingdom
 
-df1<-df[-unassigned_domain,]
-
-table(tax_table[,]=="Chloroplast")
+table(tax_tab[,]=="Chloroplast")
 #  FALSE   TRUE 
 # 504979   1013
-#all of these are Cyanobacteria!
+#all of these are Cyanobacteria, but still from euk
+123794 - 1013 
+#new number of taxa should be 122781
 
-table(tax_table$Kingdom=="Chloroplast")
-table(tax_table$Phylum=="Chloroplast")
-table(tax_table$Class=="Chloroplast")
-table(tax_table$Order=="Chloroplast") # only here
-table(tax_table$Family=="Chloroplast")
-table(tax_table$Genus=="Chloroplast")
-table(tax_table$Species=="Chloroplast")
+table(tax_tab$Kingdom=="Chloroplast")
+table(tax_tab$Phylum=="Chloroplast")
+table(tax_tab$Class=="Chloroplast")
+table(tax_tab$Order=="Chloroplast") # only here
+table(tax_tab$Family=="Chloroplast")
+table(tax_tab$Genus=="Chloroplast")
+table(tax_tab$Species=="Chloroplast")
 
-table(tax_table[,]=="Mitochondria")
+tax_tab<-tax_tab[-which(tax_tab$Order=="Chloroplast"),] # remove chloroplasts
+
+table(tax_tab[,]=="Mitochondria")
 #  FALSE   TRUE 
 # 504925   1067
+122781 - 1067
+#new number of taxa should be 121714
 
-table(tax_table$Kingdom=="Mitochondria")
-table(tax_table$Phylum=="Mitochondria")
-table(tax_table$Class=="Mitochondria")
-table(tax_table$Order=="Mitochondria") 
-table(tax_table$Family=="Mitochondria") #only here
-table(tax_table$Genus=="Mitochondria")
-table(tax_table$Species=="Mitochondria")
+table(tax_tab$Kingdom=="Mitochondria")
+table(tax_tab$Phylum=="Mitochondria")
+table(tax_tab$Class=="Mitochondria")
+table(tax_tab$Order=="Mitochondria") 
+table(tax_tab$Family=="Mitochondria") #only here
+table(tax_tab$Genus=="Mitochondria")
+table(tax_tab$Species=="Mitochondria")
 
 #Mitochondria is only found for 
 # Bacteria
@@ -249,32 +227,18 @@ table(tax_table$Species=="Mitochondria")
 # Rickettsiales
 # Mitochondria
 # but maybe they evolved together? not sure if I should throw out: https://doi.org/10.1016/S0014-5793(01)02618-7
+# still eukaryotes
 
-
-
-#remove the rest of the objects
-rm(df3)
-rm(df2)
-rm(df1)
-rm(df)
-
-rm(unassigned_domain)
+tax_tab<-tax_tab[-which(tax_tab$Family=="Mitochondria"),]
 ```
 
 ### @count_track
 
 ```{r}
-nrow(tax_tab_silva)
-# [1] 119879 - Aug29
+nrow(tax_tab)
+# [1] 121714 - 11May2023
 ```
 
-### c. remove : in taxomony table
-
-```{r}
-
-```
-
-cleaned taxa table (from NAs, chloroplast and mitochondria, with the colons removed is now called taxa_tab)
 
 ## 2. read in OTU table
 
@@ -286,10 +250,10 @@ otu_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFact
 rownames(otu_table)<-otu_table$OTUID
 otu_table$OTUID<-NULL
 
-# #a double check that there are no NAs in the table - this takes awhile so checked once. 
-# table(is.na(otu_table[,]))
-#  FALSE 
-# 161770302
+#a double check that there are no NAs in the table - this takes awhile so checked once.
+#table(is.na(otu_table[,]))
+#     FALSE 
+# 161770302 11May2023
 ```
 
 ### a. sed only and remove samples
@@ -298,7 +262,6 @@ otu_table$OTUID<-NULL
 2.  remove samples that should not have been included RL0100L2 #should not have been sequenced RL0104L #should not have been sequenced SM0100L #private land, cannot include SM0104L #private land, cannot include SV0100L #should not have sequenced first core SV0104L #should not have sequenced first core TL0100L2 #biased productivity (near septic) TL0104L #biased productivity (near septic) LL0404L #out of order since core starts at 38 cm LW0100 \# duplicated sample, clearly wrong LWL0104L #sampled poorly 2017, should not have been sequenced LWL100L #sampled poorly 2017, should not have been sequenced
 
 ```{r}
-require(stringr)
 OTU_names<-unique(names(otu_table))
 
 water<-c("H24blank",
@@ -441,11 +404,11 @@ starting, with chloroplast, mitochondria, and NAs included no water, or samples 
 ```{r}
 #starting number of reads in the OTU table including blanks
 sum(colSums(otu_table))
-#[1] 45453337 - 29Aug
+#[1] 45453337 - 11May2023
 
 #avg number of reads per sample before filtering with blanks
 sum(colSums(otu_table))/length(otu_table)
-#[1] 40153.12  - 29Aug
+#[1] 40153.12  - 11May2023
 
 #starting number of OTUs, first check if any OTUs are 0
 reads_per_otu<-as.data.frame(rowSums(otu_table))
@@ -456,7 +419,7 @@ rownames(reads_per_otu)<-NULL
 greaterthan0<-which(reads_per_otu$reads>0)
 otu_table_zero_rm<-otu_table[greaterthan0,]
 
-#check this
+#check this visually (no taxa with 0)
 reads_per_otu<-as.data.frame(rowSums(otu_table_zero_rm))
 
 #overwrite otu table
@@ -468,13 +431,15 @@ rm(greaterthan0)
 
 #number of OTUS
 nrow(otu_table) 
-#[1] 122444  - 29Aug
-
+#[1] 122444  - 11May2023
+save.image("DataCleaning/TemporaryDataCleaning_Part2_2a.Rdata")
 ```
 
 added this september 2nd to calculate: total number of reads (blanks removed), kept mitochondria, chloroplast and NAs also for reads per sample (555 samples without blanks)
 
 !!!did not keep this going forward, skip this section if rerunning!!!!
+
+11May2023 - did not rerun since this is trying to figure out starting OTUs, but not really the main first number.. saved the image as save.image("DataCleaning/TemporaryDataCleaning_Part2_2a.Rdata") before just in case I want to go back and do this. 
 
 ```{r}
 #initiate object to store column number containing blanks
@@ -555,8 +520,9 @@ rm(num_read)
 
 ### b. remove OTUs that were removed from the taxonomy table
 
+otu_table and tax_tab have different numbers because we deleted OTUs with 0 reads
 ```{r}
-keep<-rownames(taxa_tab)
+keep<-rownames(tax_tab)
 otus<-rownames(otu_table)
 removefromotutab<-setdiff(otus,keep)
 table(otus%in%keep)
@@ -574,28 +540,26 @@ rm(otu_table2)
 
 ### @count_track
 
-otu table with blanks and chloroplast/mitochondria/domainNA removed as wel as water and bad samples, blanks kept updated aug 29, 2022
+otu table with blanks and chloroplast/mitochondria/domainNA removed as well as water and bad samples, blanks kept updated May 11, 2023
 
 ```{r}
 #number of reads in the OTU table including blanks
 sum(colSums(otu_table))
-#[1] 43081685 - 29Aug
+#[1] 43346162 - 11May2023
 #number of OTUS
 nrow(otu_table)
-#[1] 118730 - 29Aug
+#[1] 120506 - 11May2023
 #avg number of reads per sample
 sum(colSums(otu_table))/length(otu_table)
-#[1] 38058.03 - 29Aug
+#[1] 38291.66 - 11May2023
 
 #number of samples with blanks included
 ncol(otu_table)
-#[1] 1132 - 29Aug
+#[1] 1132 - 11May2023
 
 ```
 
 ### c. remove blanks to assess reads
-
-updated 29 aug 2022
 
 ```{r}
 #initiate object to store column number containing blanks
@@ -616,8 +580,8 @@ names(blank_reads)<-"reads"
 blank_reads$sample<-rownames(blank_reads)
 rownames(blank_reads)<-NULL
 summary(blank_reads$reads)
-#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. - 29Aug
- #   0.0     2.0     4.0  1937.8    11.5 29455.0 
+   # Min. 1st Qu.  Median    Mean 3rd Qu.    Max.  11May2023
+   #  0.0     2.0     4.0  1952.2    11.5 29682.0 
 
 #remove blanks from otu_table  & calculate reads
 otu_table_no_blanks<-otu_table[, -blanks]
@@ -628,42 +592,38 @@ rownames(num_read)<-NULL
 
 
 rm(blank_reads)
-
-
-
 ```
 
 ### @count_track (blanks and OTU with blanks removed before further filtering) - this is without chloroplast/NA/mitochondira
 
-updated aug 29, 2022
-
+we actually remove the blanks in step 6, but this is just calculating the reads
 ```{r}
 #otu table with blanks removed
 #total reads
 sum(colSums(otu_table_no_blanks))
-# [1] 43039053 - 29Aug
+# [1] 43303214 - 11May2023
 #average number of reads per sample
 sum(colSums(otu_table_no_blanks))/length(otu_table_no_blanks)
-# [1] 38773.92 - 29Aug
+# [1] 39011.9 - 11May2023
 
-#number of OTUs with otus wirh zero removed
+#number of OTUs with otus with zero removed
 tmp<-as.data.frame(rowSums(otu_table_no_blanks))
 tmp<-tmp[tmp$`rowSums(otu_table_no_blanks)`>0,]
 length(tmp)
-#[1] 118730 - 29Aug
+#[1] 120506 - 11May2023
 rm(tmp)
 #number of (duplicated) samples
-#1132-22 = 1110
+#1132-22 = 1110 - checked 11May2023
 
 
 #reads in blanks
 sum(colSums(blank_data))
-#[1] 42632 - 29Aug
+#[1] 42948 - 11May2023
 #number of OTUs
 tmp<-as.data.frame(rowSums(blank_data))
 tmp<-tmp[tmp$`rowSums(blank_data)`>0,]
 length(tmp)
-#[1]  8787 - 29Aug
+#[1]  8871 - 11May2023
 #22 samples
 rm(tmp)
 rm(blanks)
@@ -675,7 +635,7 @@ rm(num_read)
 
 ## 3. remove OTUs with low reads
 
-at this point you should just have the two data frames in your environment: 1. taxa_tab 2. otu_table (taxonomy filtered, water and bad samples removed, blanks included)
+at this point you should just have the two data frames in your environment: 1. tax_tab 2. otu_table (taxonomy filtered, water and bad samples removed, blanks included)
 
 ### a. plot otus per read count
 
@@ -692,13 +652,13 @@ table_no.out_per.read$Var1<-as.numeric(as.character(table_no.out_per.read$Var1))
 colnames(table_no.out_per.read)<-c("reads","no.otus")
 
 #plot all to see that this is just happening within the first 100 reads
-#fig02a
-pdf("Figures/Number_otu_per_read_notpruned_29Aug2022.pdf")
+
+pdf("DataCleaning/Number_otu_per_read_notpruned_11May2023.pdf")
 plot(table_no.out_per.read$reads,table_no.out_per.read$no.otus,main="number of otus per read count", xlab="reads", ylab="number of otus")
 dev.off()
 #plot the subset of 0-20 reads
-#fig02b
-pdf("Figures/Number_otu_per_read_to100_notpruned_29Aug2022.pdf")
+
+pdf("DataCleaning/Number_otu_per_read_to100_notpruned_11May2023.pdf")
 plot(table_no.out_per.read$reads[1:100],table_no.out_per.read$no.otus[1:100],main="number of otus per read count", xlab="reads", ylab="number of otus")
 dev.off()
 
@@ -724,17 +684,17 @@ lessthan10<-which(reads_per_otu$reads<10)
 otu_table_lessthan10removed<-otu_table[lessthan10,]
 sum(colSums(otu_table_lessthan10removed))
 nrow(otu_table_lessthan10removed)
-# [1] 134028 - 29Aug #reads removed
-# [1] 18085 - 29Aug #otus removed
+# [1] 136262 - 11May2023 #reads removed
+# [1] 18378 - 11May2023 #otus removed
 
 # @count_track
 otu_table_10<-otu_table[-lessthan10,]
 sum(colSums(otu_table_10))
 nrow(otu_table_10)
-# [1] 42947657 - 29Aug #reads retained
-# [1] 100645 - 29Aug #otus retained
+# [1] 43209900 - 11May2023 #reads retained
+# [1] 102128 - 11May2023 #otus retained
 
-otu_table<-otu_table_10
+otu_table<-otu_table_10 #overwrite otu_table
 
 
 rm(lessthan10)
@@ -747,7 +707,7 @@ rm(otu_table_10)
 ### c. plot reads by OTUs for each sample
 
 ```{r}
-#for filtered otu table - not pruned (otu_table)
+#for filtered (reads per otu and kingdomNA/chloroplast/mito) otu table - not pruned (reads per sample) otu_table
 #calculate number of reads per sample
 reads<-as.data.frame(colSums(otu_table))
 names(reads)<-"reads"
@@ -772,8 +732,8 @@ tmp3<-as.data.frame(cbind(reads$reads,OTUs))
 names(tmp3)<-c("reads3","otus3")
 tmp3$sample<-rownames(reads)
 
-#fig3b
-pdf("Figures/Reads_otus_bysamp_notpruned_10plusreadsperOTU_29Aug2021.pdf")
+
+pdf("DataCleaning/Reads_otus_bysamp_notpruned_10plusreadsperOTU_11May2023.pdf")
 plot(OTUs,reads$reads, main="number of reads and otus for each sample", ylab="reads")
 dev.off()
 
@@ -790,65 +750,63 @@ Note - this suggest that I should normalizing (verses pruning at something like 
 
 ### a. plot number of reads per sample
 
-updated 22 Aug 2022
-
 ```{r}
-### with blanks and otus with less than 10 reads removed and taxonomy filtered####
+### with blanks and otus with less than 10 reads removed, and taxonomy filtered####
 num_read<-as.data.frame(colSums(otu_table))
 names(num_read)<-"reads"
 num_read$sample<-rownames(num_read)
 rownames(num_read)<-NULL
 
-#fig01a
+
 par(mar=c(2,4,2,2))
-pdf("Figures/fig01a_boxplot_reads_per_sample_29Aug2022.pdf")
+pdf("DataCleaning/Boxplot_reads_per_sample_11May2023.pdf")
 boxplot(num_read$reads, main="total reads per sample before pruning")
 dev.off()
 
 summary(num_read$reads)
-  # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. - 29Aug
-  #     0    9752   31103   37940   56291  178805 
-#fig01b
+   # Min. 1st Qu.  Median    Mean 3rd Qu.    Max. - 11May2023
+   #    0    9768   31242   38171   56606  182311 
+
+
 par(mar=c(2,4,2,2))
-pdf("Figures/fig01b_histogram_reads_per_sample_29Aug2022.pdf")
+pdf("DataCleaning/Histogram1_reads_per_sample_11May2023.pdf")
 hist(num_read$reads, main="total reads per sample before pruning", xlab="number of reads", breaks=150)
 dev.off()
 
-#fig01c
+
 par(mar=c(2,4,2,2))
-pdf("Figures/fig01c_histogram_low_reads_per_sample_29Aug2022.pdf")
+pdf("DataCleaning/Histogram2_low_reads_per_sample_11May2023.pdf")
 hist(num_read[num_read$reads<25000,]$reads, xlab="number of reads", main="total reads per sample before pruning", breaks=150)
 dev.off()
 
-#fig01d
+
 par(mar=c(2,4,2,2))
-pdf("Figures/fig01d_histogram_lower_reads_per_sample_29Aug2022.pdf")
+pdf("DataCleaning/Histogram3_lower_reads_per_sample_11May2023.pdf")
 hist(num_read[num_read$reads<10000,]$reads, xlab="number of reads", main="total reads per sample before pruning", breaks=150)
 dev.off()
 
-#fig01e
+
 par(mar=c(2,4,2,2))
-pdf("Figures/fig01e_histogram_lowest_reads_per_sample_29Aug2022.pdf")
+pdf("DataCleaning/Histogram4_lowest_reads_per_sample_11May2023.pdf")
 hist(num_read[num_read$reads<5000,]$reads, xlab="number of reads", main="total reads per sample before pruning", breaks=150)
 dev.off()
 
-#fig01f
-pdf("Figures/fig01f_hist_samples_per_readslessthan1000_29Aug2022.pdf")
+
+pdf("DataCleaning/Histogram5_samples_per_readslessthan1000_11May2023.pdf")
 hist(as.data.frame((num_read[num_read$reads<1000,]$reads))[,1],breaks = 100,xlab="number of reads", ylab="freq of samples", main="number of samples by read number (<1000)")
 dev.off()
 
-#fig01g
-pdf("Figures/fig01g_hist_samples_per_readslessthan1000_29Aug2022.pdf")
+
+pdf("DataCleaning/Histogram6_samples_per_readslessthan1000_29Aug2022.pdf")
 hist(as.data.frame((num_read[num_read$reads<1000,]$reads))[,1],breaks = 50,xlab="number of reads", ylab="freq of samples", main="number of samples by read number (<1000)")
 dev.off()
 
 
 ```
 
-numbers of samples lost with pruning reran aug 22, 2022
+numbers of samples lost with pruning
 
 ```{r}
-
 #this is with the blanks included, OTUs with less than 10 reads removed, and taxonomy filtering
 #200 samples with less than 1000 reads... looking to see where I should cut as the "low number of reads"
 #this is calculated with blanks removed already
@@ -859,8 +817,9 @@ length(num_read[num_read$reads<150,]$reads)
 length(num_read[num_read$reads<100,]$reads)
 #removing samples with <100 reads, we remove 97 samples
 
+#-11May2023
 # [1] 152
-# [1] 136
+# [1] 135
 # [1] 117
 # [1] 107
 # [1] 97
@@ -868,7 +827,7 @@ length(num_read[num_read$reads<100,]$reads)
 rm(num_read)
 ```
 
-### b. prune samples \@ 100
+### b. prune samples @ 100
 
 choice is to remove samples with less than 100 reads
 
@@ -886,15 +845,15 @@ prune<-which(num_read$reads<100)
 
 otu_table_pruned<-otu_table[,-prune]
 ncol(otu_table_pruned)
-# 1035 - 29Aug duplicated samples remaining
+# 1035 - 11May2023 duplicated samples remaining
 
-#check those columns were removed! 
+#visually check those columns were removed! 
 remove<-num_read[prune,] # all of these are less than 100
 sum(remove$reads)
-#2418 -29Aug reads removed with pruning
-num_read_pruned<-as.data.frame(colSums(otu_table_pruned)) # all over 100 
+#2424 -11May2023 reads removed with pruning
+num_read_pruned<-as.data.frame(colSums(otu_table_pruned)) # visually - all over 100 
 sum(num_read_pruned$`colSums(otu_table_pruned)`)
-#42945239 -29Aug reads after pruning (see below for count track, these match)
+#43207476 -11May2023 reads after pruning (see below for count track, these match)
 
 #remove OTUs that are now zero 
 reads_per_otu<-as.data.frame(rowSums(otu_table_pruned))
@@ -903,7 +862,7 @@ reads_per_otu$otu<-rownames(reads_per_otu)
 rownames(reads_per_otu)<-NULL
 
 lessthan1<-which(reads_per_otu$reads<1)
-#none less than one
+#none less than one -11May2023
 
 #rewrite otu table
 otu_table<-otu_table_pruned
@@ -919,8 +878,6 @@ rm(num_read)
 
 ### @count_track
 
-updated 29 aug 2022
-
 ```{r}
 #reads in pruned otu table
 sum(colSums(otu_table))
@@ -928,27 +885,24 @@ sum(colSums(otu_table))
 nrow(otu_table)
 #number of duplicated samples
 ncol(otu_table)
-# [1] 42945239 - 29Aug
-# [1] 100645 - 29Aug
-# [1] 1035 - 29Aug
 
+# [1] 43207476 - 11May2023
+# [1] 102128 - 11May2023
+# [1] 1035 - 11May2023 
 ```
 
 ## 5. correlate technical replicates
 
 ### a. correlate technical replicates
 
-this chunk of code you put in the otu table you want to try with and then rerun for each variation.
-
 ```{r}
 otu_tab_derep <- otu_table
-
 
 #Pull out the barcode names from the current sample names containing locus ID, forward MID, reverse MID, and Library number.
 #split by "_"" 4 times, save as character matrix and extract the 4th slot.
 samp_names<-str_split(names(otu_tab_derep),pattern = "_", 4, simplify = T)[,4]
 length(unique(samp_names))
-#599 unique samples
+#532 unique samples 11May2023
 
 
 #I also could go look for the specific tag... could ask kevin if this is TAG jumping?? 
@@ -972,12 +926,11 @@ cor_df <- data.frame(SampleID = rep(names(cor_df), sapply(cor_df, length)), corr
 #Sort correlations to look at lowest ones.
 cor_df %>% arrange(correlation,SampleID)
 
-#502 unique samples (not duplicated)
+#503 unique samples (not duplicated) - 11May2023
 
 # 70% cutoff        
 low_cor_samp<-cor_df[cor_df$correlation<0.7,]
-# 18 samples
-
+# 17 samples -11May2023
 
 rm(tmp)
 rm(cor_df)
@@ -990,9 +943,9 @@ rm(otu_tab_derep)
 
 ### b. look at samples individually
 
-I did this once, and the results are in an excel file, from there, I selected the samples that needed to be removed after summing technical replicates!
+I did this once, and the results are in an excel file, from there, I selected the samples that needed to be removed after summing technical replicates.
 
-for reads correlated less than 70%, kept samples whose smaller reads were less than 25% of the greater reads updated 29 aug 2022
+for reads correlated less than 70%, kept samples whose smaller reads were less than 25% of the greater reads
 
 ```{r}
 tmp <- otu_table
@@ -1022,7 +975,6 @@ rm(low_cor_samp)
 rm(samp_names)
 ```
 
-sample1 sample2 correlation reads1 reads2 percent 33_1\_0_DNA 33_1\_0_DNA 0.41812768 324 1322 25% 35_2\_6_DNA 35_2\_6_DNA 0.66788087 447 1040 43% 37_1\_2_DNA 37_1\_2_DNA 0.52398164 104 521 20% 39_1\_18_DNA 39_1\_18_DNA 0.31364043 164 652 25% 44_1\_12_DNA 44_1\_12_DNA 0.64393483 161 132952 0% 46_1\_2_DNA 46_1\_2_DNA 0.69341167 155 168144 0% BL0126L BL0126L 0.52864848 348 3941 9% BL0132L BL0132L 0.61811876 150 16985 1% FB0104L FB0104L 0.34169897 204 283 72% LB0212L LB0212L 0.54820268 114 545 21% LL0104L LL0104L 0.11559503 129 160 81% LL0112L LL0112L 0.53879839 114 287 40% LS0120L LS0120L 0.06579572 49014 53193 92% SR0102L SR0102L 0.58216221 420 676 62% SR0104L SR0104L 0.36381059 159 1577 10% SR0114L SR0114L 0.66456196 239 23419 1% SV0408L SV0408L 0.5970406 229 235 97%
 
 ### c. sum technical replicates
 
@@ -1036,9 +988,9 @@ samp_names<-str_split(names(otu_tab_derep),pattern = "_", 4, simplify = T)[,4]
 
 #use the sample names to compare which ones were removed 
 length(unique(samp_names))
-# 532 - 29Aug
+# 532 - 11May2023
 
-#just to check that the new sample names match up, I created a new dataframe. I check this three lines below. 
+#just to check that the new sample names match up, I created a new dataframe. I check this three lines below. #old code from Gordon, not needed but good double check
 otu_table2<-otu_tab_derep
 
 #rename columns in otu_table2 with the extracted info in samp_names
@@ -1064,7 +1016,7 @@ rm(otu2_df)
 rm(otu3_df)
 rm(samp_names)
 
-#remove uncorrelated samples!!!!
+#remove uncorrelated samples - 11May2023
 remove<-c("35_2_6_DNA",
 "39_1_18_DNA",
 "FB0104L",
@@ -1078,7 +1030,7 @@ remove<-c("35_2_6_DNA",
 where<-which(names(summed_otu_table)%in% remove) 
 table(names(summed_otu_table)[where] %in% remove)
 summed_otu_table_goodcorronly<-summed_otu_table[,-where]
-table(names(summed_otu_table_goodcorronly)%in% remove)
+table(names(summed_otu_table_goodcorronly)%in% remove) #all FALSE
 #rewrite otu_table
 otu_table<-summed_otu_table_goodcorronly
 
@@ -1089,7 +1041,7 @@ reads_per_otu$otu<-rownames(reads_per_otu)
 rownames(reads_per_otu)<-NULL
 
 lessthan1<-which(reads_per_otu$reads<1)
-#no OTUs less than 1
+#no OTUs less than 1 (integer (empty))
 
 
 rm(lessthan1)
@@ -1126,8 +1078,8 @@ blank_reads<-as.data.frame(colSums(blank_data))
 
 	
 colSums(blank_data)
- # JC_Blank2 JC7_Blank2 - 29Aug
- #     42082        132 
+ # JC_Blank2 JC7_Blank2 - 11May2023
+ #     42396        131 
 
 
 
@@ -1142,6 +1094,7 @@ for (i in 1:ncol(otu_table)){
                 blanks<- append(blanks, i)
         }}
 rm(i)
+#'blanks' object emtpy so no more blanks
 
 
 rm(blanks)
@@ -1159,22 +1112,19 @@ sum(colSums(otu_table))
 nrow(otu_table)
 ncol(otu_table)
 
-# [1] 42795778 - 29Aug
-# [1] 100645  - 29Aug
-# [1] 522  - 29Aug
-
+# [1] 43057075 - 11May2023
+# [1] 102128 - 11May2023
+# [1] 522 - 11May2023
 
 ```
 
 ## 7. Write OTU and taxa CSVs before normalization
 
-updated 29 aug 2022
-
 ```{r}
-# write.csv(otu_table,file="otu_table_notnorm_29Aug2022.csv",row.names = T)
-# write.csv(taxa_tab,file="tax_tab_notnorm_29Aug2022.csv",row.names = T)
-# 
-# save.image("WyLakeMicrobes_otu_tax_notnorm_env_29Aug2022.RData")
+write.csv(otu_table,file="DataCleaning/otu_table_notnorm_11May2023.csv",row.names = T)
+write.csv(tax_tab,file="DataCleaning/tax_tab_notnorm_11May2023.csv",row.names = T)
+
+save.image("DataCleaning/WyLakeMicrobes_otu_tax_notnorm_env_11May2023.RData")
 ```
 
 ## 8. normalize
@@ -1182,8 +1132,6 @@ updated 29 aug 2022
 using the rrarefy() function: Function rrarefy generates one randomly rarefied community data frame or vector of given sample size. The sample can be a vector giving the sample sizes for each row. If the sample size is equal to or smaller than the observed number of individuals, the non-rarefied community will be returned. The random rarefaction is made without replacement so that the variance of rarefied communities is rather related to rarefaction proportion than to the size of the sample. updated 29 aug 2022
 
 ```{r}
-require(vegan)
-
 #performing this on pruned at 100, otus with at least 10 reads (from FIRST and only cut in step 3), taxonomy cleaned
 
 otu_to_normalize<-otu_table
@@ -1194,19 +1142,19 @@ rownames(num_read)<-NULL
 
 belowthreshold<-which(num_read$reads<10000)
 length(belowthreshold)
-#44 samples below 10,000 reads
+#44 samples below 10,000 reads - 11May2023
 
 #look at how many samples removed if the threshold is 5000
 belowthreshold5000<-which(num_read$reads<5000)
 length(belowthreshold5000)
-# this is 40, so almost the same, so will go to 10K
+# this is 40, so almost the same, so will go to 10K - 11May2023
 rm(belowthreshold5000)
 
 otu_to_normalize_10k<-otu_to_normalize[,-belowthreshold]
 ncol(otu_to_normalize_10k)
-# 478 - 29Aug samples remaining
+# 478 - 11May2023 samples remaining
 
-#check those columns were removed! 
+#check those columns were removed visually
 remove<-num_read[belowthreshold,] # all of these are between 100 and 10,000
 num_read_otu_to_normalize_10000<-as.data.frame(colSums(otu_to_normalize_10k)) # all over 10,000 reads
 
@@ -1222,7 +1170,7 @@ reads_per_otu$otu<-rownames(reads_per_otu)
 rownames(reads_per_otu)<-NULL
 
 lessthan1<-which(reads_per_otu$reads<1)
-#no OTUs with reads less than 1
+#no OTUs with reads less than 1 (integer)
 rm(lessthan1)
 rm(reads_per_otu)
 
@@ -1233,14 +1181,14 @@ rm(reads_per_otu)
 #rarefy!
 S <- specnumber(otu_to_normalize_10k) 
 length(S)
-#[1] 100645 - 29Aug # observed number of species
-(raremax <- min(rowSums(t(otu_to_normalize_10k)))) #minimum reads to normalize to (10285 - 29Aug)
+#[1] 102128 - 11May2023 # observed number of species
+(raremax <- min(rowSums(t(otu_to_normalize_10k)))) #minimum reads to normalize to (10292 - 11May2023)
 set.seed(061319)
 rrare<-rrarefy(t(otu_to_normalize_10k), sample = raremax)
 df<-as.data.frame(t(rrare))
 
 
-pdf("Figures/Rarefied_data_10k_29Aug2022.pdf")
+pdf("DataCleaning/Rarefied_data_10k_11May2023.pdf")
 plot(S, specnumber(t(rrare)), xlab = "Observed No. of Species", ylab = "Rarefied No. of Species")
 abline(0, 1)
 dev.off()
@@ -1258,7 +1206,7 @@ otu_counts$OTU<-rownames(otu_counts)
 rownames(otu_counts)<-NULL
 zeroOTU<-which(otu_counts$reads<1)
 length(zeroOTU)
-# [1] 8688 - 29Aug OTUS that are zero after rarefying.
+# [1] 8755 - 11May2023 OTUS that are zero after rarefying.
 
 otu_tab_10knorm<-df[-zeroOTU,]
 
@@ -1277,33 +1225,35 @@ rm(S)
 rm(zeroOTU)
 rm(rrare)
 
-#keep the non-normalized OTU table that is cut off at 10k just in case
-# write.csv(otu_to_normalize_10k, "otu_to_normalize_10k_29Aug2022.csv", row.names=T)
-# write.csv(otu_tab_10knorm, "otu_tab_10knorm_29Aug2022.csv", row.names=T)
-# save.image("WyLakeMicrobes_otu_tax_10knorm_env_29Aug2022.RData")
+# keep the non-normalized OTU table that is cut off at 10k just in case
+write.csv(otu_to_normalize_10k, "DataCleaning/otu_to_normalize_10k_11May2023.csv", row.names=T)
+write.csv(otu_tab_10knorm, "DataCleaning/otu_tab_10knorm_11May2023.csv", row.names=T)
+save.image("DataCleaning/WyLakeMicrobes_otu_tax_10knorm_env_11May2023.RData")
 ```
 
-### \@ count_track rarefied_final
+### @ count_track rarefied_final
 
 ```{r}
 (sum(colSums(otu_tab_10knorm)))
 nrow(otu_tab_10knorm)
 ncol(otu_tab_10knorm)
-# [1] 4916230 - 29Aug reads
-# [1] 91957 - 29Aug OTUs
-# [1] 478 - 29Aug samples
+# [1] 4919576 - 11May2023 reads
+# [1] 93373 - 11May2023 ESVs
+# [1] 478 - 11May2023 samples
 
 #percent of samples removed
-1-(478/555)
+1-(478/555) #- 11May2023
+#[1] 0.1387387 - 11May2023
 
-#number of ESVs retained
-91957/122444
-#[1] 0.7510127
+#number of ESVs retained from before taxa filtering, removing OTUs with low reads, or samples with low reads
+93373/122444 #-   11May2023 from line 433 (without water samples, with blanks, with NA/Chloro/mito)
+#[1] 0.7625772 - 11May2023
 ```
 
 ### a. ordinate and procrustes
 
-reran 29 aug 2022
+HAVE NOT RERUN 11May2023
+if want to, load save.image("DataCleaning/WyLakeMicrobes_otu_tax_10knorm_env_11May2023.RData")
 
 ```{r}
 require(vegan)
@@ -1322,7 +1272,7 @@ procrust
 
 summary(procrust)
 
-pdf("Figures/Procrustes_error_29Aug2022.pdf",height=10, width=20)
+pdf("DataCleaning/Procrustes_error_11May2023.pdf",height=10, width=20)
 plot(procrust)
 dev.off()
 
@@ -1400,8 +1350,8 @@ sort(unique(metadata$bin_depth))
 ## 2. Make phyloseq
 
 ```{r}
-load("WyLakeMicrobes_otu_tax_10knorm_env_29Aug2022.RData")
-metadata<-read.csv("metadata_29Aug2022.csv",header=T,row.names = 1)
+load("DataCleaning/WyLakeMicrobes_otu_tax_10knorm_env_11May2023.RData")
+metadata<-read.csv("Metadata/metadata_29Aug2022.csv",header=T,row.names = 1)
 
 #change East Glacier mislabeled sample from EG0308L2 to EG0318
 names(otu_tab_10knorm)[which(names(otu_tab_10knorm)=="EG0308L2")]<-"EG0318L"
@@ -1414,14 +1364,16 @@ table(rownames(metadata)%in%names(otu_tab_10knorm)) # all true
 #check only sediment
 table(metadata$sample_type)
 
-#put in "Unassigned" in blanks in taxa tab
-tax_tab<-as.data.frame(taxa_tab)
-tax_tab[tax_tab==""]<-"Unassigned"
-tax_tab <-as.matrix(tax_tab)
+#make sure no empty taxonomies (these should all be NAs with the DADA2 training dataset)
+table(tax_tab[,]=="")
+#  FALSE 
+# 496605 - 11May2023
+
 #covert taxa table to phyloseq sub-object
+tax_tab <-as.matrix(tax_tab)
 taxa_tab <- tax_table(tax_tab)
 
-#make sure removed
+#make sure removed - checked again once turned into phyloseq sub-object
 table(taxa_tab@.Data=="") # all false
 
 #delete non-normalized otu tables
@@ -1441,16 +1393,10 @@ rm(taxa_tab)
 #transform sample data
 ps_tr <- transform_sample_counts(ps, function(x) x / sum(x))
 #save final phyloseq object
-#save.image("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
+save.image("WyLakeMicrobes_Phyloseq_11May2023.RData")
 ```
 
 # Part III: Data Analysis
-
-## 0. password
-
-```{bash}
-PrayingMantus@0613@
-```
 
 ## 1. Load data
 
