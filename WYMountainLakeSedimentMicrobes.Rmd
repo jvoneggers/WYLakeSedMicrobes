@@ -15,12 +15,27 @@ salloc --mem=20GB --nodes=1 --cpus-per-task=1 --account=microbiome --time=3:00:0
 
 General notes: - Round lake didn't have a bottom water temperature recorded, but surface water was 20.1 degrees and the lake was 1.5 m so it is likely the bottom water temperature isn't too much different (around 20 deg C), so I used 20.1 as the temperature - mV for sample SR20122L: changed from 1121.6 to 121.6 since likely an error (pH matches perfectly and the surrounding measurements are between 107 and 134) -- but not a problem when looking at the ps object data, since this sample must have been removed for low reads or something - Only one truly replicated sample (LB0208L1 and LB0208L2)
 
-load packages
+# load packages
 ```{r}
 require(stringr)
 require(tidyverse)
 require(vegan)
 require(phyloseq)
+require(iNEXT)
+require(phangorn)
+require(msa)
+require(Biostrings)
+require(colorspace)
+require(cluster)
+require(reshape2)
+require(geosphere)
+require(Hmisc)
+require(patchwork)
+require(Matrix)
+require(metagMisc)
+require(ggplot2)
+library(MetBrewer)
+
 ```
 
 
@@ -1393,7 +1408,7 @@ rm(taxa_tab)
 #transform sample data
 ps_tr <- transform_sample_counts(ps, function(x) x / sum(x))
 #save final phyloseq object
-save.image("WyLakeMicrobes_Phyloseq_11May2023.RData")
+##save.image("WyLakeMicrobes_Phyloseq_11May2023.RData")
 ```
 
 # Part III: Data Analysis
@@ -1401,8 +1416,832 @@ save.image("WyLakeMicrobes_Phyloseq_11May2023.RData")
 ## 1. Load data
 
 ```{r}
-load("WyLakeMicrobes_phyloseq_env_29Aug2022.RData")
+load("WyLakeMicrobes_Phyloseq_11May2023.RData")
 ```
+
+## 2. iNEXT (alpha richness)
+
+```{r}
+bio1 <- as.matrix(ps@otu_table@.Data)
+bio2 <- split(bio1, as.numeric(rep(1:ncol(bio1), each = nrow(bio1))))
+bio3 <- iNEXT(bio2, q=0, datatype="abundance") 
+
+# select asymptotic estimates 
+bio4 <- bio3$AsyEst
+bio5 <- subset(bio4, bio4$Diversity =="Species richness")  
+bio6 <- subset(bio4, bio4$Diversity =="Shannon diversity")  
+bio7 <- subset(bio4, bio4$Diversity =="Simpson diversity")  
+
+#create a table with diversity estimates
+bio8 <- data.frame(cbind(bio5$Observed, bio6$Observed, bio7$Observed))
+rownames(bio8) <- colnames(bio1)
+colnames(bio8) <- c("Species_Richness", "Shannon_Diversity","Simpson_Dominance")
+head(bio8)
+write.table(bio8,file="2023May26_HillNumbersNormalized.txt",sep="\t",row.names=T, col.names=T)
+hill_norm<-bio8
+
+rm(bio1)
+rm(bio2)
+rm(bio3) 
+rm(bio4)
+rm(bio5)
+rm(bio6)
+rm(bio7)
+rm(bio8)
+```
+
+
+## 3. iCAMP community assembly
+
+### a. make phylogenetic tree
+
+#### i. subset ESVS with 10+ reads
+
+
+```{r}
+ESV<-as.data.frame(otu_table(ps))
+ESV<-t(ESV)
+ESV<-ESV[order(rownames(ESV)),]
+
+table(colSums(ESV)<10)
+# FALSE  TRUE  - 27May2023
+# 28480 64893
+mean(colSums(ESV)) #53 reads on average - 27May2023
+
+lessthan10<-which(colSums(ESV)<10)
+ESV_10plusreads<-ESV[,-lessthan10]
+dim(ESV_10plusreads)
+# 478 28480 - 27May2023
+table(colSums(ESV_10plusreads)<10)# all FALSE
+```
+
+#### ii. subset fasta file with sequences
+
+in local R, subset fasta file by the ESVs with 10+ reads (normalized reads)
+
+```{r}
+seqs<-Biostrings::readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa") 
+seqs@ranges@NAMES<-stringr::str_split(seqs@ranges@NAMES,pattern = ";", 3, simplify = T)[,1]
+
+seqs_sub<-seqs[colnames(ESV_10plusreads)]
+table(seqs_sub@ranges@NAMES %in% colnames(ESV_10plusreads))
+table(colnames(ESV_10plusreads)%in%seqs_sub@ranges@NAMES)
+rm(list=ls()[! ls() %in% c("ESV_10plusreads", "seqs_sub" )])
+#save.image("WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads_27May2023.RData")
+writeXStringSet(seqs_sub,filepath = "ESVs_with10ormorereads_forBeartooth_27May2023.fasta", format = "fasta")
+```
+
+copy the fasta file over to the supercomputer
+
+```{bash}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/ESVs_with10ormorereads_forBeartooth_27May2023.fasta jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree
+```
+
+#### iii. make phylogenetic tree
+
+using clustalo to align and then fasttree to make the tree
+
+align_maketree.sh
+```{bash}
+#!/bin/bash
+#SBATCH --job-name phylotree
+#SBATCH --mem=120GB
+#SBATCH --time=6-00:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --account=microbiome
+#SBATCH --output=phylotree_%A.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=jvonegge@uwyo.edu
+
+module load arcc/1.0 miniconda3/4.12.0
+conda activate shotgun_env
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree
+
+clustalo -i ESVs_with10ormorereads_forBeartooth_27May2023.fasta -o tempfile_27May2023_muscled.fa -v --threads=6
+
+FastTree -nt tempfile_27May2023_muscled.fa > ESVs_with10ormorereads_output_27May2023_muscled.nwk
+
+```
+
+
+Copy environment over to supercomputer
+```{bash}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads_27May2023.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP
+
+```
+
+### b. qpen ESVs with 10+ reads
+
+qpen_function.R
+```{r}
+require(phyloseq)
+require(iCAMP)
+require(ape)
+load("../WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads_27May2023.RData")
+comm<-ESV_10plusreads
+tree<-read.tree("../ESVs_with10ormorereads_output_27May2023_muscled.nwk")
+table(colnames(ESV_10plusreads)%in%tree[["tip.label"]]) #all TRUE
+table(tree[["tip.label"]]%in%colnames(ESV_10plusreads)) #all TRUE
+
+
+wd0="/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP/qpen"
+nworker=6 # parallel computing thread number
+rand.time=1000 # usually use 1000 for real data.
+  
+
+  # for a big dataset, pdist.big may be used
+  save.wd="/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP/qpen/pdbig.qpen"
+  print(save.wd)
+  # please change to the folder you want to save the pd.big output.
+  
+  pd.big=pdist.big(tree = tree, wd=save.wd, nworker = nworker)
+  qp2=qpen(comm=comm, pd=pd.big$pd.file, pd.big.wd=pd.big$pd.wd,
+           pd.big.spname=pd.big$tip.label, tree=tree,
+           rand.time=rand.time, nworker=nworker)
+  setwd(wd0)
+save.image("WyLakeMicrobes_env_27May2023_qpen_ESVswith10plusreads_results.RData")
+```
+
+run_qpen_function.sh
+```{bash}
+#!/bin/bash
+#SBATCH --job-name qpen_10plus
+#SBATCH --mem=120GB
+#SBATCH --time=6-00:00:00
+#SBATCH --cpus-per-task=6
+#SBATCH --account=microbiome
+#SBATCH --output=qpen_10plus_%A.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=jvonegge@uwyo.edu
+
+module load gcc/12.2.0 r/4.2.2
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP/qpen
+
+srun Rscript qpen_function.R
+echo "srun Rscript qpen_function.R"
+
+echo "finished qpen iCAMP - JVE"
+date
+```
+
+copy back to desktop
+```{bash}
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP/qpen/WyLakeMicrobes_env_27May2023_qpen_ESVswith10plusreads_results.RData /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
+```
+
+
+### c. qpen output - ESVs with 10plus reads
+
+#### i) start here
+
+```{r}
+load("WyLakeMicrobes_Phyloseq_11May2023.RData")
+load("WyLakeMicrobes_env_27May2023_qpen_ESVswith10plusreads_results.RData")
+
+#pull out results from iCAMP
+qpn<-qp2$result[,c("sample1","sample2","process")]
+names(qpn)[1]<-"s1_samp_names"
+names(qpn)[2]<-"s2_samp_names"
+
+
+dfr <- reshape(qpn, direction="wide", idvar="s1_samp_names", timevar="s2_samp_names")
+rownames(dfr)<-dfr$s1_samp_names
+dfr$s1_samp_names<-NULL
+colnames(dfr)<-str_split_fixed(colnames(dfr),"process[.]",n=2)[,2]
+dfr$SV0426L<-rep(NA,nrow(dfr))
+dfr[nrow(dfr)+1,] <- NA
+rownames(dfr)[478]<-"33_1_10_DNA"
+
+dfr<-dfr[order(row.names(dfr)), ]
+table(rownames(dfr)==colnames(dfr)) #all true
+table(rownames(dfr)%in%metadata$samp_names) #all true
+table(colnames(dfr)%in%metadata$samp_names) # all true
+
+#now add in environmental distances (lake bottom water and lake depth)
+#using objects from above
+variables<-c("max_lake_depth"         
+, "water_sample_ph_bot"     
+, "water_sample_do_bot"     
+, "water_sample_t_bot") 
+
+#pull out metadata
+metadata<-metadata[order(match(rownames(metadata),colnames(dfr))),]
+metadata_sub<-metadata[,names(metadata)%in%variables]
+
+table(colnames(dfr)==metadata$samp_names) # all true
+table(colnames(dfr)==rownames(metadata_sub)) # all true 
+
+daisy.mat <- as.matrix(daisy(scale(metadata_sub), metric="gower"))
+table(colnames(daisy.mat)==colnames(dfr)) # all true
+table(rownames(daisy.mat)==rownames(dfr)) # all true
+
+daisy.mat[upper.tri(daisy.mat, diag = T)] <- NA
+env_dist<-melt(daisy.mat, na.rm=TRUE)
+
+process<-melt(as.matrix(dfr), na.rm=T)
+
+table(process$Var1==env_dist$Var1) # all true
+table(process$Var2==env_dist$Var2) # all true 
+process$env_dist<-env_dist$value
+
+pairwise<-process #overwrite original file
+
+names(pairwise)[1]<-"s1_samp_names"
+pairwise$s1_samp_names<-as.character(pairwise$s1_samp_names)
+names(pairwise)[2]<-"s2_samp_names"
+pairwise$s2_samp_names<-as.character(pairwise$s2_samp_names)
+names(pairwise)[3]<-"process"
+
+metadata$zone<-rep("A",nrow(metadata))
+metadata[metadata$bin_depth%in%c(6,8,10,12),]$zone<-"B"
+metadata[metadata$bin_depth%in%c(14,16,18,20,22,24,26),]$zone<-"C"
+metadata[metadata$depth>26,]$zone<-"D"
+
+metadata_s1<-metadata
+colnames(metadata_s1)<-paste("s1",colnames(metadata_s1), sep="_")
+
+metadata_s2<-metadata
+colnames(metadata_s2)<-paste("s2",colnames(metadata_s2), sep="_")
+
+pairwise<-merge(pairwise, metadata_s1, by="s1_samp_names")
+pairwise<-merge(pairwise, metadata_s2, by="s2_samp_names")
+
+#remove metadata notes
+pairwise$s1_notes<-NULL
+pairwise$s2_notes<-NULL
+pairwise$s1_Notes_sed_water_wt<-NULL
+pairwise$s2_Notes_sed_water_wt<-NULL
+pairwise$s1_Notes_carbon_nitrogen<-NULL
+pairwise$s2_Notes_carbon_nitrogen<-NULL
+pairwise$s1_Notes._lake_sed_pH<-NULL
+pairwise$s2_Notes._lake_sed_pH<-NULL
+
+#absolute cm for sediment distance
+
+# add in absolute centimeters into the distance
+pairwise$abs_cm<-rep(NA, nrow(pairwise))
+i=1
+for(i in 1:nrow(pairwise)){
+  ifelse(pairwise$s1_lake_drive[i]==pairwise$s2_lake_drive[i],pairwise$abs_cm[i]<-abs(pairwise$s2_depth[i]-pairwise$s1_depth[i]),NA)
+}
+
+# calculate geographic distance
+
+require(geosphere)
+for(i in 1:nrow(pairwise)){
+        pairwise$geo_dist[i]<-as.numeric(distm(data.frame(X = pairwise$s1_longitude[i], Y = pairwise$s1_latitude[i]),data.frame(X = pairwise$s2_longitude[i], Y = pairwise$s2_latitude[i])))
+}
+
+pairwise$geo_dist_km<-pairwise$geo_dist/1000
+
+write.csv(pairwise, "qpen_10plusESVs_allcomparisons_29May2023.csv")
+```
+
+#### ii) environmental distance within each zone
+
+```{r}
+comps_backup<-read.csv("qpen_10plusESVs_allcomparisons_29May2023.csv", header=T, row.names=1)
+
+comps<-comps_backup
+
+comps$d_val<-comps$env_dist
+
+#make breaks for zone A
+comps_tmp<-comps[comps$s1_zone=="A" & comps$s2_zone=="A",]
+
+comps_tmp<-comps_tmp[comps_tmp$d_val!=0,]
+comps_tmp$d_val_group_breaks<-cut2(comps_tmp$d_val, g=10)
+levels(comps_tmp$d_val_group_breaks)
+# [1] "[0.0162,0.117)" "[0.1167,0.163)" "[0.1632,0.210)" "[0.2097,0.240)" "[0.2399,0.276)"
+#  [6] "[0.2759,0.323)" "[0.3234,0.384)" "[0.3835,0.454)" "[0.4543,0.540)" "[0.5399,0.722]"
+breaks<-c(as.numeric(gsub("\\]","" ,gsub("\\[","",unlist(str_split(as.character(levels(comps_tmp$d_val_group_breaks)), pattern=",")))[c(seq(1, 20, 2),20)])))
+
+#make sure first value is below the minimum env_distance measure that isn't 0
+min(comps_backup[comps_backup$env_dist!=0,]$env_dist)
+#[1] 0.01621537
+
+# make a bottom break (0.016 - just below the lowest env_dist) that is above zero but below the first break
+breaks<-c(0.016,breaks[2:11]) 
+
+full_output<-data.frame(n=NULL,process=NULL,percent=NULL,d_val_group=NULL, d_val_inclthisnumandbelow=NULL, zone=NULL,dist=NULL)
+
+zone<-c("A","B","C")
+j=1
+for(j in 1:3){
+comps_sub<-comps[comps$s1_zone==zone[j] & comps$s2_zone==zone[j],]
+
+sub<-comps_sub[comps_sub$d_val==0,]
+sub$d_val_group<-rep(0, nrow(sub))
+
+comps_sub<-comps_sub[comps_sub$d_val!=0,]
+comps_sub$d_val_group<-as.numeric(cut(comps_sub$d_val, breaks=breaks))
+comps_sub<-rbind(sub, comps_sub)
+
+#breaks_labels<- levels(comps$d_val_group_breaks)
+breaks_labels<-c("[0, 0]", "[0.016, 0.12)", "[0.12, 0.16)", "[0.16, 0.21)", "[0.21, 0.24)",
+ "[0.24, 0.28)", "[0.28, 0.32)", "[0.32, 0.38)", "[0.38, 0.45)",
+"[0.45, 0.54)" ,"[0.54, 0.72]")
+
+tmp<-comps_sub
+tally<-data.frame(n=NULL,process=NULL,percent=NULL,d_val_group=NULL, d_val_inclthisnumandbelow=NULL, zone=NULL,dist=NULL)
+proc<-unique(comps_backup$process)
+groups<-sort(unique(tmp$d_val_group))
+i=1
+p=1
+for(i in 1:length(groups)){
+  tmp2<-tmp[tmp$d_val_group==groups[i],]
+  for(p in 1:length(proc)){
+    tally<-rbind(tally,data.frame(n=nrow(tmp2),process=proc[p],percent=nrow(tmp2[tmp2$process==proc[p],])/nrow(tmp2),d_val_group=groups[i], d_val_inclthisnumandbelow=breaks[i],zone=zone[j], dist="env"))
+  }
+  }
+
+full_output<-rbind(full_output,tally)
+}
+#check to make sure they add to one
+range(full_output$n)
+#[1]  171 2020 #29May2023
+mean(full_output$n)
+#947.6364 #29May2023
+
+
+#write.csv(full_output, "qpen_10plusESVs_envdist_29May2023.csv")
+
+```
+
+#### iii) geographic distance
+
+```{r}
+comps_backup<-read.csv("qpen_10plusESVs_allcomparisons_29May2023.csv", header=T, row.names=1)
+comps<-comps_backup
+
+
+comps[comps$s1_lake_id==comps$s2_lake_id & comps$s1_lake_drive!=comps$s2_lake_drive,]$geo_dist_km<-0.001 #add one meter for cores in the same lake
+comps$d_val<-comps$geo_dist_km
+breaks<-c(seq(0,15,5), seq(100, 300, 200), seq(400,500,100))  ##nothing from  43.30254  174.6661
+breaks<-c(0,0.1, breaks[2:8])
+full_output<-data.frame(n=NULL,process=NULL,percent=NULL,d_val_group=NULL, d_val_inclthisnumandbelow=NULL, zone=NULL,dist=NULL)
+
+
+zone<-c("A","B","C")
+j=1
+for( j in 1:3) {
+comps_sub<-comps[comps$s1_zone==zone[j] & comps$s2_zone==zone[j],]
+
+sub<-comps_sub[comps_sub$d_val==0,]
+sub$d_val_group<-rep(0, nrow(sub))
+
+comps_sub<-comps_sub[comps_sub$d_val!=0,]
+comps_sub$d_val_group<-as.numeric(cut(comps_sub$d_val, breaks=breaks))
+comps_sub<-rbind(sub, comps_sub)
+
+breaks_labels<- c("[0,0]",levels(cut(comps$d_val, breaks=breaks)))
+
+tmp<-comps_sub
+tally<-data.frame(n=NULL,process=NULL,percent=NULL,d_val_group=NULL, d_val_inclthisnumandbelow=NULL, zone=NULL,dist=NULL)
+proc<-unique(comps_backup$process)
+groups<-sort(unique(tmp$d_val_group))
+i=1
+p=1
+for(i in 1:length(groups)){
+  tmp2<-tmp[tmp$d_val_group==groups[i],]
+  for(p in 1:length(proc)){
+    tally<-rbind(tally,data.frame(n=nrow(tmp2),process=proc[p],percent=nrow(tmp2[tmp2$process==proc[p],])/nrow(tmp2),d_val_group=groups[i], d_val_inclthisnumandbelow=breaks[i],zone=zone[j], dist="geo"))
+  }
+  }
+full_output<-rbind(full_output,tally)
+#count the number of comparisons in each zone
+}
+
+range(full_output$n)
+#[1]  75 2604 # 29May2023
+mean(full_output$n)
+#1158.222 - 29May2023
+print(breaks_labels)
+
+#write.csv(full_output, "qpen_10plusESVs_geodist_29May2023.csv")
+```
+
+#### iv) combine the two dataframes
+
+```{r}
+geo_dist_tally<-read.csv("qpen_10plusESVs_geodist_29May2023.csv", header=T, row.names=1)
+env_dist_tally<-read.csv("qpen_10plusESVs_envdist_29May2023.csv", header=T, row.names=1)
+full_output<-rbind(geo_dist_tally,env_dist_tally)
+
+full_output[full_output$process=="Homogeneous.Selection",]$process<-"B_Homogeneous selection"
+full_output[full_output$process=="Heterogeneous.Selection",]$process<-"A_Variable selection"
+full_output[full_output$process=="Dispersal.Limitation",]$process<-"E_Dispersal limitation"
+full_output[full_output$process=="Homogenizing.Dispersal",]$process<-"D_Homogenizing dispersal"
+full_output[full_output$process=="Undominated",]$process<-"C_Drift"
+
+
+#add in color
+full_output$zone_col<-rep('#018571',nrow(full_output))
+full_output[full_output$zone=="B",]$zone_col<-"#C4AD79"
+full_output[full_output$zone=="C",]$zone_col<-'#a6611a'
+        
+
+
+#add in xlab as dist column
+full_output[full_output$dist=="env",]$dist<-'Environmental dissimilarity'
+full_output[full_output$dist=="geo",]$dist<-'Distance (km)'
+
+#write.csv(full_output,"qpen_10plusESVs_community_assembly_env_geo_dist_summary_29May023.csv")
+
+#if count needed
+count<-unique(full_output[,c("d_val_group","zone","n","dist")])
+#write.csv(count, "qpen_10plusESVs_count_summary_29May2023.csv")
+```
+
+#### v) plot env and geo dist
+
+```{r}
+full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_29May2023.csv", header=T, row.names = 1)
+full_output$proportion<-full_output$percent
+full_output$percent<-full_output$percent*100
+
+new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
+#new_colors<-c("#CCCCCC","#B0E2FF", "#36648B")
+
+break_labels<-list()
+break_labels[[1]]<-c( "0",">0 to 0.1" ,  ">0.1 to 5"  , ">5 to 10" , ">10 to 15"  ,">15 to 100" , ">100 to 300", ">300 to 400" ,">400 to 500")
+break_labels[[2]]<-c("0", "0.01 to <0.12", "0.12 to <0.16", "0.16 to <0.21", "0.21 to <0.24",
+ "0.24 to <0.28", "0.28 to <0.32", "0.32 to <0.38", "0.38 to <0.45",
+"0.45 to <0.54" ,"0.54 to 0.72")
+
+#full_output<-full_output[full_output$process%in%sort(unique(full_output$process))[3:5],]
+
+ggplt<-list()
+i=1
+j=1
+for(j in 1:3){
+        sub<-full_output[full_output$zone==sort(unique(full_output$zone))[j],]
+for(i in 1:2){
+        sub2<-sub[sub$dist==unique(sub$dist)[i],]       
+ifelse(j==3, 
+       
+       
+       ggplt[[length(ggplt)+1]] <- ggplot(sub2,            
+               aes(x = d_val_group,
+                   y = percent,
+                   color= process)) +  geom_point(size=3)+ theme_bw()   + xlab(label = sub2$dist[1])+ scale_x_continuous(breaks = sort(unique(sub2$d_val_group)), labels=break_labels[[i]])+ ylab(label = "") + geom_line(linewidth=2) +   labs(color="Assembly process")  + scale_color_manual(values=new_colors)+ theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,75) +theme(axis.text.x = element_text(angle = 60,hjust=1))+      
+        theme(legend.position="none", axis.text=element_text(color="black"))+
+        theme(text=element_text(size=14), #change font size of all text
+        axis.text=element_text(size=13), #change font size of axis text
+        axis.title=element_text(size=15), #change font size of axis titles
+        plot.title=element_text(size=14), #change font size of plot title
+        legend.text=element_text(size=14), #change font size of legend text
+        legend.title=element_text(size=15)) +
+                theme(panel.grid.minor = element_blank(), panel.grid.major.x = element_blank())#change font size of legend title
+       
+       , 
+       
+       
+              ggplt[[length(ggplt)+1]] <- ggplot(sub2,            
+               aes(x = d_val_group,
+                   y = percent,
+                   color= process)) + geom_point(size=3)+ theme_bw()   + xlab(label = sub2$dist[1])+ scale_x_continuous(breaks = sort(unique(sub2$d_val_group)), labels=break_labels[[i]])+ ylab(label = "") + geom_line(linewidth=2) +   labs(color="Assembly process")   + scale_color_manual(values=new_colors)+ theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,75) +theme(axis.text.x = element_text(angle = 60,hjust=1))+      
+        theme(legend.position="none", axis.text=element_text(color="black"))+
+        theme(text=element_text(size=14), #change font size of all text
+        axis.text=element_text(size=13), #change font size of axis text
+        axis.title=element_text(size=15), #change font size of axis titles
+        plot.title=element_text(size=14), #change font size of plot title
+        legend.text=element_text(size=14), #change font size of legend text
+        legend.title=element_text(size=15))+ #change font size of legend title
+        theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank()) +
+        theme(panel.grid.minor = element_blank(), panel.grid.major.x = element_blank())#change font size of legend title
+       )
+        }}
+
+
+
+pdf("Figures/Community_assembly_29May2023.pdf",height=7,width=7)
+ggplt[[1]]+ggplt[[2]]+ ggplt[[3]]+ggplt[[4]]+ggplt[[5]]+ggplt[[6]]+ 
+  plot_layout(ncol = 2)
+dev.off()
+
+
+```
+
+#### vi) plot sediment distance
+
+```{r}
+
+qpn<-read.csv("qpen_10plusESVs_allcomparisons_29May2023.csv", header=T, row.names=1)
+
+#subset by samples within the same core
+downcore<-qpn[is.na(qpn$abs_cm)==F & qpn$abs_cm<27 ,]
+
+
+downcore$d_val<-abs(downcore$abs_cm)
+downcore$d_val_group_breaks<-cut2(downcore$d_val, g=10)
+downcore$d_val_group<-as.numeric(cut2(downcore$d_val, g=10))
+levels(downcore$d_val_group_breaks)
+break_labels<- c("0 to <2.5" ,"2.5 to <5" ,"5 to <7", "7 to <9" ,"9 to <11" ,"11 to <15"
+,"15 to <18" ,"18 to <22" ,"22 to <26")
+#these are put into 9 groups here instead of the requested 10, must be to make it even.
+
+tmp<-downcore
+tally<-data.frame(process=NULL,percent=NULL, d_val_group=NULL,n=NULL)
+groups<-sort(unique(downcore$d_val_group))
+i=1
+for(i in 1:length(groups)){
+  tmp2<-tmp[tmp$d_val_group==groups[i],]
+  processes<-as.data.frame(table(tmp2$process)/nrow(tmp2))
+  colnames(processes)[1]<-"process"
+  colnames(processes)[2]<-"percent"
+  processes$process<-as.character(processes$process)
+  processes$d_val_group<-rep(groups[i],nrow(processes))
+  processes$n<-rep(nrow(tmp2),nrow(processes))
+  tally<-rbind(tally,processes)
+}
+  
+
+
+tally$proportion<-tally$percent
+tally$percent<-tally$percent*100
+
+tally[tally$process=="Homogeneous.Selection",]$process<-"B_Homogeneous selection"
+tally[tally$process=="Heterogeneous.Selection",]$process<-"A_Variable selection"
+tally[tally$process=="Dispersal.Limitation",]$process<-"E_Dispersal limitation"
+tally[tally$process=="Homogenizing.Dispersal",]$process<-"D_Homogenizing dispersal"
+tally[tally$process=="Undominated",]$process<-"C_Drift"
+
+new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
+
+        ggplt <- ggplot(tally,            
+                        aes(x = d_val_group,
+                            y = percent,
+                            color= process)) +  geom_line(linewidth=2) +geom_point(size=3) + theme_bw() + scale_x_continuous(breaks=seq(1,length(groups),1), 
+                                                                                                                             labels=break_labels) + xlab(label = "Sediment distance (cm)")+ ylab(label = "Proportion (%)") + geom_line(linewidth=2) +   labs(color="Assembly process")    + scale_color_manual(values=new_colors, labels=c("Variable selection",  "Homogeneous selection",    "Drift",  "Homogenizing dispersal" , "Dispersal limitation" )) + theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,75) + theme(axis.text.x = element_text(angle = 45,hjust=1))+ guides(color = guide_legend(override.aes = list(linewidth = 6))) + theme(legend.position="none")+
+                theme(axis.text=element_text(color="black"))+
+                theme(axis.text.x = element_text(angle = 60,hjust=1))+
+                theme(text=element_text(size=14), #change font size of all text
+                      axis.text=element_text(size=14), #change font size of axis text
+                      axis.title=element_text(size=15), #change font size of axis titles
+                      plot.title=element_text(size=14), #change font size of plot title
+                      legend.text=element_text(size=14), #change font size of legend text
+                      legend.title=element_text(size=15),
+                      panel.grid.minor = element_blank(), 
+                      panel.grid.major.x = element_blank()) #change font size of legend title 
+
+pdf("Figures/CommunityAssembly_sediment_distance_29May2023.pdf", height=2.9, width=3.3)
+ggplt
+dev.off()
+
+unique(tally$n)
+#[1] 372 352 302 283 239 403 163 236 190
+
+```
+plot legend
+```{r}
+require(cowplot)
+library(ggplot2) 
+library(grid)
+library(gridExtra) 
+# Using the cowplot package
+legend <- cowplot::get_legend(ggplt)
+
+grid.newpage()
+grid.draw(legend)
+```
+
+
+
+## 4. NMDS
+
+```{r}
+ps_table <- data.frame(otu_table(ps_tr))
+ps_table <-t(ps_table)
+sd_sed <- data.frame(sample_data(ps_tr))
+
+ord_baseR<-metaMDS(ps_table, distance = "bray")
+# Ran 29May2023
+# Run 0 stress 0.1707505 
+# Run 1 stress 0.1923034 
+# Run 2 stress 0.1930776 
+# Run 3 stress 0.1974319 
+# Run 4 stress 0.2061988 
+# Run 5 stress 0.1986631 
+# Run 6 stress 0.4193641 
+# Run 7 stress 0.1965793 
+# Run 8 stress 0.198454 
+# Run 9 stress 0.4193671 
+# Run 10 stress 0.1963773 
+# Run 11 stress 0.1957859 
+# Run 12 stress 0.1903609 
+# Run 13 stress 0.1973567 
+# Run 14 stress 0.192619 
+# Run 15 stress 0.1990084 
+# Run 16 stress 0.1933836 
+# Run 17 stress 0.2008754 
+# Run 18 stress 0.2063872 
+# Run 19 stress 0.1992947 
+# Run 20 stress 0.1928635 
+# *** Best solution was not repeated -- monoMDS stopping criteria:
+#      3: no. of iterations >= maxit
+#     12: stress ratio > sratmax
+#      5: scale factor of the gradient < sfgrmin
+
+fig<-ordiplot(ord_baseR, type="points")
+
+NMDS1<-fig$sites[,1]
+NMDS2<-fig$sites[,2]
+
+fig_sites<-as.data.frame(fig[["sites"]])
+table(fig_sites$NMDS2==NMDS2) #same for both NMDS1 and NMDS2
+
+
+fig_sites$samp_names<-rownames(fig_sites)
+fig_sites$samp_names<-gsub("X","",as.character(fig_sites$samp_names))
+table(names(as.data.frame(ps_tr@otu_table))==fig_sites$samp_names) # all true 
+
+#add in metadata to the dataframe with the NMDS
+ord_df<-merge(fig_sites,sd_sed, by="samp_names")
+
+#8c510a darker brown
+#a6611a # dark brown
+#dfc27d
+#80cdc1
+#018571 # dark teal
+
+darkertan<-darken("#dfc27d", 0.1)
+#C4AD79
+
+ord_df$zone_col<-rep('#01857180',nrow(ord_df))
+ord_df[ord_df$bin_depth%in%c(6,8,10,12),]$zone_col<-"#C4AD7980"
+ord_df[ord_df$bin_depth%in%c(14,16,18,20,22,24,26),]$zone_col<-'#a6611a80'
+ord_df[ord_df$depth>26,]$zone_col<-'#00000080' #black
+
+zone_colors<- c('#018571','#dfc27d','#a6611a','#000000')
+
+sd_sed$bottom_water_temp<-sd_sed$water_sample_t_bot
+sd_sed$lake_depth<-sd_sed$max_lake_depth
+sd_sed$sediment_depth<-sd_sed$depth
+
+#if you want first axis reversed!
+ord_df$NMDS1<-(ord_df$NMDS1*(-1))
+
+ord.fit <- envfit(ord_baseR ~  sediment_depth + lake_depth + bottom_water_temp,  data = sd_sed,  perm = 1000, na.rm = TRUE)
+ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-1))
+
+save.image("NMDS_29May2023.Rdata")
+```
+
+plot NMDS
+
+```{r}
+load("NMDS_6Sept2022.Rdata")
+
+pdf("Figures/NMDS_29May2023_noLegend.pdf", width=5, height=4.5)
+par(mar=c(4, 4, 2, 1), xpd=TRUE)
+plot(ord_df$NMDS1, ord_df$NMDS2,pch=16,cex=1.5, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='')
+axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
+title(xlab="NMDS1", line = 2.5, cex.lab=1.2)
+title(ylab="NMDS2", line = 2, cex.lab=1.2)
+plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6)
+dev.off()
+```
+
+
+
+
+
+
+
+## 6. Island Biogeography for poster
+
+Merge in the lake area measurements from Google Earth Pro polygons, plot whether lake depth increases with lake area. Generally true, but some exceptions of large shallow lakes. 
+```{r}
+lkarea<-read.csv("/Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/Metadata/metadata_lakearea_27May2023.csv",header=T)
+
+meta_merged<-merge(metadata,lkarea,by="lake_name")
+
+#plot lake area by lake depth
+
+uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth)
+uniq_lake<-unique(uniq_lake)
+plot(uniq_lake$lakearea_squaremeters,uniq_lake$max_lake_depth, pch=16, xlab="Lake area (sq m)",ylab="Max. lake depth")
+
+```
+
+
+```{r}
+ESV<-as.data.frame(otu_table(ps))
+ESV<-t(ESV)
+
+#calculate the number of ESVs for each sediment core
+LkDr_ESVs<-data.frame(lake_drive=NULL, num_samples=NULL,num_ESVs=NULL)
+i=1
+for(i in 1:length(unique(metadata$lake_drive))){
+        #for each lake_drive, grab all the sample names in metadata
+        samples<-metadata[metadata$lake_drive==unique(metadata$lake_drive)[i],]$samp_names
+        #pull out number of ESVs from the table 
+        sub_ESV<-as.data.frame(ESV[rownames(ESV)%in%samples,])  
+        colsumsESV<-as.data.frame(colSums(sub_ESV))
+       LkDr_ESVs<-rbind(LkDr_ESVs,data.frame(lake_drive=unique(metadata$lake_drive)[i], num_samples=length(samples),num_ESVs=colSums(colsumsESV != 0)))
+}
+
+#this didn't work if just one sample so updated the last two manually
+
+LkDr_ESVs[47,3]<-2003
+LkDr_ESVs[48,3]<-3570
+
+```
+
+Something to think about is that some lakes have MORE sediment samples, can plot this
+```{r}
+plot(LkDr_ESVs$num_samples, LkDr_ESVs$num_ESVs, pch=16, ylab="Total ESVs per core", xlab="Sediment samples")
+#cores must have at least 5 samples
+
+#remove lake_drives with less than 5 samples
+LkDr_ESVs<-LkDr_ESVs[LkDr_ESVs$num_samples>4,]
+
+#merge with lake metadata
+uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth, lake_drive, mountain_range)
+uniq_lake<-unique(uniq_lake)
+
+#merge with lake metadata
+isl_bio<-merge(LkDr_ESVs,uniq_lake, by="lake_drive")
+
+isl_bio$col<-as.factor(isl_bio$mountain_range)
+isl_bio$col<-as.numeric(isl_bio$col)
+isl_bio$lakearea_squarekm<-isl_bio$lakearea_squaremeters/1000000
+```
+
+plot number of taxa with lake depth, lake size, and lake depth x size
+```{r}
+cols<-met.brewer(name="Egypt", n=4, type="discrete")
+cols<-c("#000000",cols[1],cols[4],cols[2],cols[3])
+full_cols<-cols
+#cols<-paste(cols,"99", sep="")
+point_types<-c(16,17,18,19,20)
+
+
+
+pdf("Figures/ESVs_lakearea_29May2023.pdf", height=4,width=5)
+par(mar=c(4,6,2,2))
+expression<-expression(Lake ~ area ~ (km^2))
+plot(isl_bio$lakearea_squarekm,isl_bio$num_ESVs, pch=16, cex=2, ylab="Exact sequence variants \n(ESVs) per core" ,col=cols[isl_bio$col], xlab=expression)
+legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
+dev.off()
+
+pdf("Figures/ESVs_lakevolume_29May2023.pdf", height=4,width=5)
+par(mar=c(4,6,2,2))
+expression<-expression(Lake ~ volume ~ (m^3))
+plot((isl_bio$lakearea_squaremeters * isl_bio$max_lake_depth),isl_bio$num_ESVs, cex=2,pch=16, ylab="Exact sequence variants \n(ESVs) per core",col=cols[isl_bio$col], xlab=expression)
+legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
+dev.off()
+```
+
+
+
+
+```{r}
+plot(isl_bio$max_lake_depth,isl_bio$num_ESVs,  ylab="ESVs per core", xlab="Lake depth (m)", col=cols[isl_bio$col],pch=point_types[isl_bio$col])
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## 10000. OLD CODE
 
 ## 2. Stats for manuscript
 
