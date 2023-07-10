@@ -487,7 +487,7 @@ sum(colSums(otu_table_no_blanks))
 #45407617 - 2 Sept 2022
 #average number of reads per sample
 sum(colSums(otu_table_no_blanks))/(length(otu_table_no_blanks)/2)
-#[1] 81815.53- 2 Sept 2022
+#[1] 81815.53- 2 Sept 2022 (double checked this is the same 10July2023 for manuscript supplementary material)
 
 
 reads_per_otu<-as.data.frame(rowSums(otu_table_no_blanks))
@@ -528,7 +528,7 @@ length(tmp)
 #22 samples
 
 # how much is that one sample of total reads
-(13537+ 30828)/45720 #2 Sept
+(13537+ 30828)/45720 #2 Sept (double checked this is the same 10July2023 for manuscript supplementary material)
 rm(tmp)
 rm(blanks)
 rm(otu_table_no_blanks)
@@ -1482,6 +1482,8 @@ summary(dat_gam)
 ```
 
 
+
+
 ## 3. iCAMP community assembly
 
 ### a. make phylogenetic tree
@@ -2005,7 +2007,7 @@ new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
                         aes(x = d_val_group,
                             y = percent,
                             color= process)) +  geom_line(linewidth=2) +geom_point(size=3) + theme_bw() + scale_x_continuous(breaks=seq(1,length(groups),1), 
-                                                                                                                             labels=break_labels) + xlab(label = "Sediment distance (cm)")+ ylab(label = "Proportion (%)") + geom_line(linewidth=2) +   labs(color="Assembly process")    + scale_color_manual(values=new_colors, labels=c("Variable selection",  "Homogeneous selection",    "Drift",  "Homogenizing dispersal" , "Dispersal limitation" )) + theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,75) + theme(axis.text.x = element_text(angle = 45,hjust=1))+ guides(color = guide_legend(override.aes = list(linewidth = 6))) + theme(legend.position="none")+
+                                                                                                                             labels=break_labels) + xlab(label = "Vertical sediment\ndistance (cm)")+ ylab(label = "Proportion (%)") + geom_line(linewidth=2) +   labs(color="Assembly process")    + scale_color_manual(values=new_colors, labels=c("Variable selection",  "Homogeneous selection",    "Drift",  "Homogenizing dispersal" , "Dispersal limitation" )) + theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,75) + theme(axis.text.x = element_text(angle = 45,hjust=1))+ guides(color = guide_legend(override.aes = list(linewidth = 6))) + theme(legend.position="none")+
                 theme(axis.text=element_text(color="black"))+
                 theme(axis.text.x = element_text(angle = 60,hjust=1))+
                 theme(text=element_text(size=14), #change font size of all text
@@ -2017,14 +2019,14 @@ new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
                       panel.grid.minor = element_blank(), 
                       panel.grid.major.x = element_blank()) #change font size of legend title 
 
-pdf("Figures/CommAssemProc_SedDist_29May2023.pdf", height=2.9, width=3.3)
+pdf("Figures/CommAssemProc_SedDist_29May2023.pdf", height=3.05, width=3.3)
 ggplt
 dev.off()
 
 unique(tally$n)
 #[1] 372 352 302 283 239 403 163 236 190
 
-write.csv(tally,"qpen_10plusESVs_seddist_29June2023.csv")
+#write.csv(tally,"qpen_10plusESVs_seddist_29June2023.csv")
 
 ```
 
@@ -2033,7 +2035,6 @@ sediment distance GAM
 sediment distance (with zero)
 need to run most of section before (don't need to replot)
 ```{r}
-
 model_results<-data.frame(process=NULL, devex=NULL, p=NULL)
 
 #Plot the sediment depth GAM for each process
@@ -2501,6 +2502,249 @@ Number of permutations: 999
 
 
 
+#### x) deeper comparisons
+
+```{r}
+require(ggplot2)
+
+new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
+comps_backup<-read.csv("qpen_10plusESVs_allcomparisons_29May2023.csv", header=T, row.names=1)
+comps<-comps_backup
+comps$d_val<-comps$abs_cm
+comps<-comps[is.na(comps$d_val)==F,]
+comps<-comps[comps$d_val>26,] # 119 comparisons, so no many compared to the other ones
+
+tmp2<-comps
+tally<-data.frame(n=NULL,process=NULL,percent=NULL)
+proc<-unique(comps_backup$process)
+for(p in 1:5){
+        tally<-rbind(tally,data.frame(n=nrow(tmp2),process=proc[p],percent=nrow(tmp2[tmp2$process==proc[p],])/nrow(tmp2)))
+}
+tally$group<-rep("deep", nrow(tally))
+
+EAP_plot<-ggplot(tally, aes(x = group, y = percent , fill = process)) +
+        geom_bar(stat="identity") + scale_fill_manual(values=new_colors,labels= c("Variable selection", "Homogeneous selection", "Drift", "Homogenizing dispersal", "Dispersal limitation" )) + guides(fill=guide_legend(title="Assembly process"))
+pdf("Figures/SupplementaryFigures/SFig2_deep_community_assembly_6July2023.pdf", height=4, width=4)
+EAP_plot
+dev.off()
+
+```
+
+
+
+#### xi) CAP sediment characteristics
+
+```{r}
+load("WyLakeMicrobes_Phyloseq_11May2023.RData")
+load("WyLakeMicrobes_env_27May2023_qpen_ESVswith10plusreads_results.RData")
+
+
+#can reaload data from here, or just use the qp2 object
+qpn<-qp2$result[,c("sample1","sample2","process")]
+names(qpn)[1]<-"s1_samp_names"
+names(qpn)[2]<-"s2_samp_names"
+
+
+dfr <- reshape(qpn, direction="wide", idvar="s1_samp_names", timevar="s2_samp_names")
+rownames(dfr)<-dfr$s1_samp_names
+dfr$s1_samp_names<-NULL
+colnames(dfr)<-str_split_fixed(colnames(dfr),"process[.]",n=2)[,2]
+dfr$SV0426L<-rep(NA,nrow(dfr))
+dfr[nrow(dfr)+1,] <- NA
+rownames(dfr)[478]<-"33_1_10_DNA"
+
+dfr<-dfr[order(row.names(dfr)), ]
+table(rownames(dfr)==colnames(dfr)) #all true
+metadata<-metadata[order(match(rownames(metadata),colnames(dfr))),]
+table(colnames(dfr)==metadata$samp_names) # all true
+
+
+#now select the sediment characteristics to examine
+#using objects from above
+variables<-c("pH"
+, "d_13_c"  
+, "cn"
+, "sulfur_perc"     
+, "water_perc"     
+, "protein_per") 
+
+#pull out metadata
+
+metadata_sub<-metadata[,names(metadata)%in%variables]
+
+table(colnames(dfr)==rownames(metadata_sub)) # all true 
+
+
+daisy.mat <- as.matrix(daisy(scale(metadata_sub), metric="gower"))
+table(colnames(daisy.mat)==colnames(dfr)) # all true
+table(rownames(daisy.mat)==rownames(dfr)) # all true
+
+
+daisy.mat[upper.tri(daisy.mat, diag = T)] <- NA
+#there are a number of samples that don't have the data specified in the variables, therefore they are listed as NA and removed here.
+env_dist<-melt(daisy.mat, na.rm=TRUE)
+
+env_dist_reexpand <- reshape(env_dist, direction="wide", idvar="Var1", timevar="Var2")
+rownames(env_dist_reexpand)<-env_dist_reexpand$Var1
+env_dist_reexpand$Var1<-NULL
+colnames(env_dist_reexpand)<-str_split_fixed(colnames(env_dist_reexpand),"value[.]",n=2)[,2]
+
+#figure out which ones were different
+setdiff(rownames(env_dist_reexpand),colnames(env_dist_reexpand))
+setdiff(colnames(env_dist_reexpand),rownames(env_dist_reexpand))
+env_dist_reexpand$SV0226L<-rep(NA,nrow(env_dist_reexpand))
+env_dist_reexpand[nrow(env_dist_reexpand)+1,] <- NA
+rownames(env_dist_reexpand)[nrow(env_dist_reexpand)]<-"33_1_10_DNA"
+
+env_dist_reexpand<-env_dist_reexpand[order(row.names(env_dist_reexpand)), ]
+table(rownames(env_dist_reexpand)==colnames(env_dist_reexpand)) #all true
+
+#how many NAs in each and overlap for metadata
+#metadata_sub[,metadatacolnames(env_dist_reexpand)]
+met<-metadata_sub[rownames(metadata_sub)%in% colnames(env_dist_reexpand),]
+#pH, cn and percent water are present in most samples, but then half have d13c and half the sulfur and protein percent
+
+#subset the process/dfr data frame by the comparisons in metadata
+dfr<-dfr[colnames(env_dist_reexpand),colnames(env_dist_reexpand)]
+
+dfr<-dfr[order(row.names(dfr)), ]
+table(rownames(dfr)==colnames(dfr)) #all true
+table(rownames(dfr)==rownames(env_dist_reexpand)) #all true
+table(colnames(dfr)==colnames(env_dist_reexpand)) #all true
+
+#melt back to pairwise comparisons
+env_dist<-melt(as.matrix(env_dist_reexpand))
+process<-melt(as.matrix(dfr))
+
+
+table(process$Var1==env_dist$Var1) # all true
+table(process$Var2==env_dist$Var2) # all true 
+process$env_dist<-env_dist$value
+process<-process[complete.cases(process),]
+
+
+pairwise<-process
+
+names(pairwise)[1]<-"s1_samp_names"
+pairwise$s1_samp_names<-as.character(pairwise$s1_samp_names)
+names(pairwise)[2]<-"s2_samp_names"
+pairwise$s2_samp_names<-as.character(pairwise$s2_samp_names)
+names(pairwise)[3]<-"process"
+
+metadata$zone<-rep("A",nrow(metadata))
+metadata[metadata$bin_depth%in%c(6,8,10,12),]$zone<-"B"
+metadata[metadata$bin_depth%in%c(14,16,18,20,22,24,26),]$zone<-"C"
+metadata[metadata$depth>26,]$zone<-"D"
+
+metadata_s1<-metadata
+colnames(metadata_s1)<-paste("s1",colnames(metadata_s1), sep="_")
+
+metadata_s2<-metadata
+colnames(metadata_s2)<-paste("s2",colnames(metadata_s2), sep="_")
+
+pairwise<-merge(pairwise, metadata_s1, by="s1_samp_names")
+pairwise<-merge(pairwise, metadata_s2, by="s2_samp_names")
+
+#remove metadata notes
+pairwise$s1_notes<-NULL
+pairwise$s2_notes<-NULL
+pairwise$s1_Notes_sed_water_wt<-NULL
+pairwise$s2_Notes_sed_water_wt<-NULL
+pairwise$s1_Notes_carbon_nitrogen<-NULL
+pairwise$s2_Notes_carbon_nitrogen<-NULL
+pairwise$s1_Notes._lake_sed_pH<-NULL
+pairwise$s2_Notes._lake_sed_pH<-NULL
+
+#absolute cm for sediment distance
+
+# add in absolute centimeters into the distance
+pairwise$abs_cm<-rep(NA, nrow(pairwise))
+i=1
+for(i in 1:nrow(pairwise)){
+  ifelse(pairwise$s1_lake_drive[i]==pairwise$s2_lake_drive[i],pairwise$abs_cm[i]<-abs(pairwise$s2_depth[i]-pairwise$s1_depth[i]),NA)
+}
+
+# calculate geographic distance
+
+require(geosphere)
+for(i in 1:nrow(pairwise)){
+        pairwise$geo_dist[i]<-as.numeric(distm(data.frame(X = pairwise$s1_longitude[i], Y = pairwise$s1_latitude[i]),data.frame(X = pairwise$s2_longitude[i], Y = pairwise$s2_latitude[i])))
+}
+
+pairwise$geo_dist_km<-pairwise$geo_dist/1000
+
+write.csv(pairwise, "qpen_10plusESVs_sediment_characteristics_10July2023.csv")
+
+```
+
+plot all zones together
+
+```{r}
+
+#qpn<-read.csv("qpen_10plusESVs_sediment_characteristics_10July2023.csv", header=T, row.names=1)
+#subset by samples within the same core
+downcore<-qpn[is.na(qpn$abs_cm)==F & qpn$abs_cm<27 ,]
+# we don't want to subset only samples within the same core, but really just want samples that are comparable ANYWHERE
+downcore<-qpn
+
+downcore$d_val<-downcore$env_dist
+downcore$d_val_group_breaks<-cut2(downcore$d_val, g=10)
+downcore$d_val_group<-as.numeric(cut2(downcore$d_val, g=10))
+levels(downcore$d_val_group_breaks)
+break_labels<- c("0 to <0.03" ,"0.03 to <0.05" ,"0.05 to <0.06", "0.06 to <0.08" ,"0.08 to <0.10" ,"0.10 to <0.13"
+,"0.13 to <0.15" ,"0.15 to <0.20" ,"0.20 to <0.28", "0.28 to 1")
+# [ includes ( up to 
+
+tmp<-downcore
+tally<-data.frame(process=NULL,percent=NULL, d_val_group=NULL,n=NULL)
+groups<-sort(unique(downcore$d_val_group))
+i=1
+for(i in 1:length(groups)){
+  tmp2<-tmp[tmp$d_val_group==groups[i],]
+  processes<-as.data.frame(table(tmp2$process)/nrow(tmp2))
+  colnames(processes)[1]<-"process"
+  colnames(processes)[2]<-"percent"
+  processes$process<-as.character(processes$process)
+  processes$d_val_group<-rep(groups[i],nrow(processes))
+  processes$n<-rep(nrow(tmp2),nrow(processes))
+  tally<-rbind(tally,processes)
+}
+  
+
+tally[tally$process=="Homogeneous.Selection",]$process<-"B_Homogeneous selection"
+tally[tally$process=="Heterogeneous.Selection",]$process<-"A_Variable selection"
+tally[tally$process=="Dispersal.Limitation",]$process<-"E_Dispersal limitation"
+tally[tally$process=="Homogenizing.Dispersal",]$process<-"D_Homogenizing dispersal"
+tally[tally$process=="Undominated",]$process<-"C_Drift"
+
+new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
+
+        ggplt <- ggplot(tally,            
+                        aes(x = d_val_group,
+                            y = percent,
+                            color= process)) +  geom_line(linewidth=2) +geom_point(size=3) + theme_bw() + scale_x_continuous(breaks=seq(1,length(groups),1), 
+                                                                                                                             labels=break_labels) + xlab(label = "Sediment characteristic\ndissimilarity")+ ylab(label = "Proportion") + geom_line(linewidth=2) +   labs(color="Assembly process")    +theme(axis.ticks.x = element_blank()) + scale_color_manual(values=new_colors, labels=c("Variable selection",  "Homogeneous selection",    "Drift",  "Homogenizing dispersal" , "Dispersal limitation" )) + theme(axis.title.x = element_text(vjust=-0.5)) + theme(panel.grid.minor.x = element_blank()) + ylim(0,.75) + theme(axis.text.x = element_text(angle = 45,hjust=1))+ guides(color = guide_legend(override.aes = list(linewidth = 6))) +
+                theme(axis.text=element_text(color="black"))+
+                theme(axis.text.x = element_text(angle = 60,hjust=1))+
+                theme(text=element_text(size=14), #change font size of all text
+                      axis.text=element_text(size=14), #change font size of axis text
+                      axis.title=element_text(size=15), #change font size of axis titles
+                      plot.title=element_text(size=14), #change font size of plot title
+                      legend.text=element_text(size=14), #change font size of legend text
+                      legend.title=element_text(size=15),
+                      panel.grid.minor = element_blank(), 
+                      panel.grid.major.x = element_blank()) #change font size of legend title 
+
+#pdf("Figures/SupplementaryFigures/CAP_sediment_characteristics_intracore_10July2023.pdf", height=3.5, width=6)
+pdf("Figures/SupplementaryFigures/CAP_sediment_characteristics_intercore_10July2023.pdf", height=3.5, width=6)
+ggplt
+dev.off()
+
+unique(tally$n)
+# 4277 4276
+
+
+```
 
 
 ## 4. NMDS
@@ -2598,32 +2842,6 @@ title(ylab="NMDS2", line = 2, cex.lab=1.2)
 plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6)
 dev.off()
 ```
-
-
-
-<!-- DOING THIS WITH ZONE!! -->
-<!-- ```{r} -->
-
-<!-- sd_sed$zone<-rep(1,nrow(sd_sed)) -->
-<!-- sd_sed[sd_sed$bin_depth%in%c(6,8,10,12),]$zone<-2 -->
-<!-- sd_sed[sd_sed$bin_depth%in%c(14,16,18,20,22,24,26),]$zone<-3 -->
-<!-- sd_sed[sd_sed$bin_depth==100,]$zone<-4 -->
-<!-- #sd_sed$zone<-as.factor(sd_sed$zone) -->
-
-<!-- ord.fit <- envfit(ord_baseR ~  zone + lake_depth + bottom_water_temp,  data = sd_sed,  perm = 1000, na.rm = TRUE) -->
-<!-- ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-1)) -->
-
-<!-- pdf("Figures/NMDS_28June2023_noLegend_ZONE.pdf", width=5, height=4.5) -->
-<!-- par(mar=c(4, 4, 2, 1), xpd=TRUE) -->
-<!-- plot(ord_df$NMDS1, ord_df$NMDS2,pch=16,cex=1.5, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='') -->
-<!-- axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1) -->
-<!-- title(xlab="NMDS1", line = 2.5, cex.lab=1.2) -->
-<!-- title(ylab="NMDS2", line = 2, cex.lab=1.2) -->
-<!-- plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6) -->
-<!-- dev.off() -->
-<!-- ``` -->
-
-
 
 
 ### a. adonis testing
@@ -2725,6 +2943,53 @@ Residual           474  165.209 0.88949
 Total              477  185.735 1.00000                  
 
 Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+### b. plot each zone separately
+
+```{r}
+#ord_df_backup<-ord_df
+#temp<-ord_df #reversed the whole dataset to temp to subset from
+zone<-c("replacement","surface","depauperate","deep_depauperate")
+zone_colors<-unique(temp$zone_col)
+i=1
+for(i in 1:4){
+pdf(paste("Figures/SupplementaryFigures/NMDS_",zone[i],"_10July2023.pdf", sep=""), width=5, height=4.5)
+ord_df<-temp[temp$zone_col==zone_colors[i],]
+    par(mar=c(4, 4, 2, 1), xpd=TRUE)
+plot(ord_df$NMDS1, ord_df$NMDS2,pch=16,cex=1.5, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='')
+axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
+title(xlab="NMDS1", line = 2.5, cex.lab=1.2)
+title(ylab="NMDS2", line = 2, cex.lab=1.2)
+#plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6)
+dev.off()
+}
+```
+
+### c. points by mountain range
+
+```{r}
+ord_df<-ord_df_backup
+ord_df$mtn_pch<-rep(NA,nrow(ord_df))
+ord_df[ord_df$mountain_range=="Snowy",]$mtn_pch<-21 #circle
+ord_df[ord_df$mountain_range=="Beartooth",]$mtn_pch<-22 #square
+ord_df[ord_df$mountain_range=="Wind River",]$mtn_pch<-23 #diamond
+ord_df[ord_df$mountain_range=="Bighorn",]$mtn_pch<-24 #triangle
+ord_df$mtn_pch<-as.numeric(ord_df$mtn_pch)
+
+pdf("Figures/SupplementaryFigures/NMDS_mtnshapes_10July2023.pdf", width=5, height=4.5)
+par(mar=c(4, 4, 2, 1), xpd=TRUE)
+plot(ord_df$NMDS1, ord_df$NMDS2,cex=1.5, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col="black",bg=ord_df$zone_col, pch=ord_df$mtn_pch, xlab='', cex.axis=1.2,ylab='')
+axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
+title(xlab="NMDS1", line = 2.5, cex.lab=1.2)
+title(ylab="NMDS2", line = 2, cex.lab=1.2)
+#legend("top",inset=c(0.3,-0.13),xpd=TRUE,bty ="n",legend = c("                    ","                       ","                       ","                       "), col=zone_colors, pch=16, pt.cex = 3,cex=1,ncol=4)
+#plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6)
+dev.off()
+
+```
+
+
+
 
 ## 5. Rel abund of dominant taxa
 
@@ -2955,7 +3220,7 @@ sum(ps_melt[ps_melt$taxtofam%in%subfam,]$Abundance)/length(unique(ps_melt$samp_n
 #[1] 0.2702896 - 26June2023
 ```
 
-
+PLOT
 ```{r}
 topfam<-read.csv("RelativeAbundance_AllFamilies_30May2023.csv", header=T, row.names=1)
 topfam$taxtofam<-paste(topfam$Phylum, topfam$Class,topfam$Order, topfam$Family, sep = "@")
@@ -2980,19 +3245,38 @@ topfam %>% select(Kingdom, taxtofam) %>% unique()
 
 
          
-ordered<-c("Cyanobacteria@Cyanobacteriia@Cyanobacteriales@Phormidiaceae"          
-, "Cyanobacteria@Cyanobacteriia@Synechococcales@Cyanobiaceae"            
-, "Planctomycetota@Planctomycetes@Pirellulales@Pirellulaceae"            
-, "Proteobacteria@Gammaproteobacteria@Burkholderiales@Comamonadaceae"    
-, "Proteobacteria@Gammaproteobacteria@Burkholderiales@Rhodocyclaceae"    
-, "Proteobacteria@Gammaproteobacteria@Burkholderiales@SC-I-84"           
+# ordered<-c("Cyanobacteria@Cyanobacteriia@Cyanobacteriales@Phormidiaceae"          
+# , "Cyanobacteria@Cyanobacteriia@Synechococcales@Cyanobiaceae"            
+# , "Planctomycetota@Planctomycetes@Pirellulales@Pirellulaceae"            
+# , "Proteobacteria@Gammaproteobacteria@Burkholderiales@Comamonadaceae"    
+# , "Proteobacteria@Gammaproteobacteria@Burkholderiales@Rhodocyclaceae"    
+# , "Proteobacteria@Gammaproteobacteria@Burkholderiales@SC-I-84"           
+# , "Proteobacteria@Gammaproteobacteria@Methylococcales@Methylomonadaceae" 
+# , "Verrucomicrobiota@Verrucomicrobiae@Pedosphaerales@Pedosphaeraceae" 
+# ,"Bacteroidota@Bacteroidia@Bacteroidales@Bacteroidetes vadinHA17"   
+# , "Chloroflexi@Anaerolineae@Anaerolineales@Anaerolineaceae"    
+# , "Halobacterota@Methanomicrobia@Methanomicrobiales@Methanoregulaceae"   
+# , "Halobacterota@Methanosarcinia@Methanosarciniales@Methanosaetaceae" 
+# , "Verrucomicrobiota@Omnitrophia@Omnitrophales@Omnitrophaceae"       
+# , "Planctomycetota@Phycisphaerae@MSBL9@SG8-4"                            
+# ,"Planctomycetota@Phycisphaerae@Phycisphaerales@AKAU3564 sediment group")
+
+#alphabetically ordered by family name
+ordered<-c("Proteobacteria@Gammaproteobacteria@Burkholderiales@Comamonadaceae" 
+, "Cyanobacteria@Cyanobacteriia@Synechococcales@Cyanobiaceae" 
 , "Proteobacteria@Gammaproteobacteria@Methylococcales@Methylomonadaceae" 
 , "Verrucomicrobiota@Verrucomicrobiae@Pedosphaerales@Pedosphaeraceae" 
+,"Cyanobacteria@Cyanobacteriia@Cyanobacteriales@Phormidiaceae"          
+, "Planctomycetota@Planctomycetes@Pirellulales@Pirellulaceae"            
+, "Proteobacteria@Gammaproteobacteria@Burkholderiales@Rhodocyclaceae"    
+, "Proteobacteria@Gammaproteobacteria@Burkholderiales@SC-I-84"      
+
+, "Chloroflexi@Anaerolineae@Anaerolineales@Anaerolineaceae"
 ,"Bacteroidota@Bacteroidia@Bacteroidales@Bacteroidetes vadinHA17"   
-, "Chloroflexi@Anaerolineae@Anaerolineales@Anaerolineaceae"    
 , "Halobacterota@Methanomicrobia@Methanomicrobiales@Methanoregulaceae"   
 , "Halobacterota@Methanosarcinia@Methanosarciniales@Methanosaetaceae" 
-, "Verrucomicrobiota@Omnitrophia@Omnitrophales@Omnitrophaceae"       
+, "Verrucomicrobiota@Omnitrophia@Omnitrophales@Omnitrophaceae"      
+
 , "Planctomycetota@Phycisphaerae@MSBL9@SG8-4"                            
 ,"Planctomycetota@Phycisphaerae@Phycisphaerales@AKAU3564 sediment group")
 
@@ -3003,7 +3287,7 @@ zone_colors<- c(rep('#018571',8), rep('#C4AD79', 5), rep('#a6611a',2))
 vals<-list()
 labs<-list()
 
-pdf("Figures/RelAbun_TopFam_26Jun2023.pdf", width=16, height=4)
+pdf("Figures/RelAbun_TopFam_26Jun2023_smallerwidth_alphabetical.pdf", width=14, height=4)
 par(mfrow=c(1,16), mar=c(6,6,1,0))
 plot(0:26,0:26, bty="n", frame.plot = FALSE, xaxt="n", yaxt="n",ylab = "Depth (cm)", xlab="",ylim=c(26,0), las=1, cex.lab=1.6, pch=19, col="white")
 axis(side=2, at= seq(0, 26, by=2), cex.axis=1.6,labels= seq(0, 26, by=2), las=1)
@@ -3496,6 +3780,11 @@ which(is.na(metadata_sub[3]==T))
 metadata_sub[which(is.na(metadata_sub[3]==T)),]
 
 ggpairs(metadata_sub)
+
+
+#alphaproteobacteria (nitrogen reducers) decline with depth
+sub<-subset_taxa(ps_tr, Class=="Alphaproteobacteria")
+sub %>% group_by (bin_depth) %>% summarize_at(vars(Abundance), list(abundance = mean)) %>% plot()
 ```
 
 ## 8. Distance decay
@@ -3941,37 +4230,6 @@ rm(otu_to_normalize_10k)
 rm(otu_table)
 
 ```
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
