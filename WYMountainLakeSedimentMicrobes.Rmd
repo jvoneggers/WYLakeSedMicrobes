@@ -1962,7 +1962,7 @@ dev.off()
 
 ```
 
-#### vi) plot sediment distance
+#### vi) plot sediment distance & GAMS
 
 ```{r}
 
@@ -2043,15 +2043,15 @@ need to run most of section before (don't need to replot)
 model_results<-data.frame(process=NULL, devex=NULL, p=NULL)
 
 #Plot the sediment depth GAM for each process
-pdf("Figures/seddepth_GAM_29June2023.pdf", height=3, width=10)
-par(mfrow=c(1,5),mar=c(6,4,2,1))
+pdf("Figures/SupplementaryFigures/seddepth_GAM_18Aug2023.pdf", height=3.5, width=12)
+par(mfrow=c(1,5),mar=c(9,4.5,2,0))
 i=1
 for(i in 1:5){
 sub<-tally[tally$process==sort(unique(tally$process))[i],]
 plot(sub$d_val_group,sub$percent, main=stringr::str_split(sort(unique(tally$process))[i],pattern="_")[[1]][2],ylab="", xlab="", pch=16, ylim=c(min(sub$percent),max(sub$percent)),col="black", xaxt="n")
 axis(side=1,cex=0.8, at=seq(1,(length(break_labels)),1), las=2, labels = break_labels)
-title(xlab=c("","","Sediment distance (cm)","","")[i], cex.lab=2, line=4)
-title(ylab=c("Proportion","","","","")[i], cex.lab=2)
+title(xlab=c("","","Sediment distance (cm)","","")[i], cex.lab=1.4, line=7)
+title(ylab=c("Proportion","","","","")[i], cex.lab=1.4, line =3)
 
 Data<-data.frame(x=sub$d_val_group, y=sub$percent)
 Data<-Data[order(Data$x),]
@@ -2093,9 +2093,8 @@ grid.draw(legend)
 doesn't include comparisons within the same lake 8Feb2023 
 the labeling for geographic distance is off (double check if going to put in supplementary figures)
 29June2023 - can't remember logic for why I removed 0 from the GAMs..
-
+without same lakes
 ```{r}
-require(mgcv)
 full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_29May2023.csv", header=T, row.names = 1)
 
 break_labels<-list()
@@ -2115,7 +2114,7 @@ model_results<-data.frame(dist=NULL, process=NULL, zone=NULL, rsq=NULL, p=NULL)
 
 d=1
 for (d in 1:2){
-pdf(paste("Figures/Fig7_qpen_",unique(full_output$dist)[d],"_GAM_8Feb2023.pdf",sep=""), height=3.5, width=12)
+pdf(paste("Figures/Fig7_qpen_",unique(full_output$dist)[d],"_GAM_18Aug2023.pdf",sep=""), height=3.5, width=12)
 par(mfrow=c(1,5),mar=c(8,4,2,1))
 tally<-full_output[full_output$dist==unique(full_output$dist)[d],]
 i=1
@@ -2141,12 +2140,68 @@ Data<-Data[order(Data$x),]
               rev(pred$fit - (2 * pred$se.fit))),
         col =  adjustcolor(sub2$zone_col[x], alpha.f = 0.20), border = NA)
         gam_res<-summary(Gam)
-        model_results<-rbind(model_results,data.frame(dist=unique(full_output$dist)[d], process=sort(unique(tally$process))[i], zone=unique(sub$zone)[x], rsq=round(gam_res$r.sq,digits=3), p=gam_res$s.pv))
+        model_results<-rbind(model_results,data.frame(dist=unique(full_output$dist)[d], process=sort(unique(tally$process))[i], zone=unique(sub$zone)[x], rsq=round(gam_res$dev.expl,digits=3), p=gam_res$s.pv))
         
 }}
 dev.off()
 }
 write.csv(model_results, "qPEN_CommunityAssembly_GAMS_without0_29June2023.csv")
+
+```
+
+with same lakes
+```{r}
+full_output<-read.csv("qpen_10plusESVs_community_assembly_env_geo_dist_summary_29May2023.csv", header=T, row.names = 1)
+
+break_labels<-list()
+break_labels[[1]]<-c( "0",">0 to 0.1" ,  ">0.1 to 5"  , ">5 to 10" , ">10 to 15"  ,">15 to 100" , ">100 to 300", ">300 to 400" ,">400 to 500")
+break_labels[[2]]<-c("0", "0.01 to <0.12", "0.12 to <0.16", "0.16 to <0.21", "0.21 to <0.24",
+ "0.24 to <0.28", "0.28 to <0.32", "0.32 to <0.38", "0.38 to <0.45",
+"0.45 to <0.54" ,"0.54 to 0.72")
+
+
+model_results<-data.frame(dist=NULL, process=NULL, zone=NULL, dev.exp=NULL, p=NULL)
+
+d=1
+for (d in 1:2){
+pdf(paste("Figures/SupplementaryFigures/Fig7_qpen_",unique(full_output$dist)[d],"_GAM_18Aug2023.pdf",sep=""), height=3.5, width=12)
+par(mfrow=c(1,5),mar=c(9,4.5,2,0))
+tally<-full_output[full_output$dist==unique(full_output$dist)[d],]
+i=1
+for(i in 1:5){
+sub<-tally[tally$process==sort(unique(tally$process))[i],]
+plot(sub$d_val_group,sub$percent, main=stringr::str_split(sort(unique(tally$process))[i],pattern="_")[[1]][2],ylab="", xlab="", pch=16, ylim=c(min(sub$percent),max(sub$percent)),col="white", xaxt="n")
+axis(side=1,cex=0.8, at=seq(0,(length(break_labels[[d]])-1),1), las=2, labels = break_labels[[d]])
+title(xlab=c("","",unique(full_output$dist)[d],"","")[i], cex.lab=1.4, line=7)
+title(ylab=c("Proportion","","","","")[i], cex.lab=1.4, line =3)
+x=1
+for(x in 1:3){
+sub2<-sub[sub$zone==unique(sub$zone)[x],]
+points(sub2$d_val_group,sub2$percent, pch=16, col=sub2$zone_col[x])
+
+#GAM
+Data<-data.frame(x=sub2$d_val_group, y=sub2$percent)
+Data<-Data[order(Data$x),]
+ Gam=gam(y~s(x, k=3), data=Data)
+        pred = predict.gam(Gam, newdata = Data[1], se.fit=T)
+        lines(Data$x,pred$fit, col=sub2$zone_col[x], lwd=3) 
+        polygon(x = c(Data$x, rev(Data$x)),
+        y = c( pred$fit + (2 * pred$se.fit), 
+              rev(pred$fit - (2 * pred$se.fit))),
+        col =  adjustcolor(sub2$zone_col[x], alpha.f = 0.20), border = NA)
+        gam_res<-summary(Gam)
+        model_results<-rbind(model_results,data.frame(dist=unique(full_output$dist)[d], process=sort(unique(tally$process))[i], zone=unique(sub$zone)[x], dev.exp=round(gam_res$dev.expl,digits=3), p=gam_res$s.pv))
+        
+}}
+dev.off()
+}
+write.csv(model_results, "qPEN_CommunityAssembly_GAMS_with0_18Aug2023.csv")
+
+mean(model_results[model_results$dist=="Environmental dissimilarity",]$dev.exp)
+#0.5559333 - aug 18, 2023
+mean(model_results[model_results$dist=="Distance (km)",]$dev.exp)
+# 0.5546-  aug 18, 2023
+
 
 ```
 
@@ -2829,7 +2884,7 @@ ord_df$NMDS1<-(ord_df$NMDS1*(-1))
 ord.fit <- envfit(ord_baseR ~  sediment_depth + lake_depth + bottom_water_temp,  data = sd_sed,  perm = 1000, na.rm = TRUE)
 ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-1))
 
-save.image("NMDS_29May2023.Rdata")
+@save.image("NMDS_29May2023.Rdata")
 ```
 
 
@@ -2852,13 +2907,13 @@ with "deeper reference communities"
 ```{r}
 ord_df$shape<-rep(16,nrow(ord_df))
 ord_df[ord_df$depth>26,]$shape<-8
-ord_df[ord_df$depth>26,]$zone_col<-'#00000098' #black
+ord_df[ord_df$depth>26,]$zone_col<-'#a6611a' #black
 
 ord_df$size<-rep(1.5,nrow(ord_df))
 ord_df[ord_df$depth>26,]$size<-1
 
 
-pdf("Figures/NMDS_14Aug2023_refcommunities.pdf", width=5, height=4.5)
+pdf("Figures/NMDS_19Aug2023_stardeepdepauperate.pdf", width=5, height=4.5)
 par(mar=c(4, 4, 2, 1), xpd=TRUE)
 plot(ord_df$NMDS1, ord_df$NMDS2,pch=ord_df$shape,cex=ord_df$size, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='')
 axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
@@ -2872,18 +2927,38 @@ plot just legend
 
 ```{r}
 
-pdf("Figures/NMDS_14Aug2023_refcommunities_legend.pdf", width=5, height=4.5)
+pdf("Figures/NMDS_16Aug2023_refcommunities_legend.pdf", width=5, height=4.5)
 par(mar=c(4, 4, 2, 5), xpd=T)
 plot(ord_df$NMDS1, ord_df$NMDS2,pch=ord_df$shape,cex=ord_df$size, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='')
 axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
 title(xlab="NMDS1", line = 2.5, cex.lab=1.2)
 title(ylab="NMDS2", line = 2, cex.lab=1.2)
 plot(ord.fit, labels=c("", "",""),p.max=0.05, col="black",lwd=6, cex=1.6)
-legend("topright",legend=c("A","B"), pch=c(16,8), cex=1.5, title="Group")
+legend(x=3, y=1,legend=c("A","B"), pch=c(16,8), cex=1.5, col = '#a6611a' ,title="Group")
 dev.off()
 
 
 ```
+
+
+
+
+For graphical summary
+```{r}
+ord_df$shape<-rep(16,nrow(ord_df))
+ord_df[ord_df$depth>26,]$zone_col<-'#a6611a80' #black
+
+
+pdf("Figures/NMDS_19Aug2023_graphsum.pdf", width=5, height=4.5)
+par(mar=c(4, 4, 2, 1), xpd=TRUE)
+plot(ord_df$NMDS1, ord_df$NMDS2,pch=ord_df$shape,cex=1.2, ylim=c(-1.5,2.3), yaxt="n", xlim=c(-3,2.3),col=ord_df$zone_col,xlab='', cex.axis=1.2,ylab='')
+axis(2,at=c(-1,0,1,2),labels =c(-1,0,1,2), cex.axis=1.2, las=2, col = NA, col.ticks = 1)
+title(xlab="NMDS1", line = 2.5, cex.lab=1.2)
+title(ylab="NMDS2", line = 2, cex.lab=1.2)
+dev.off()
+```
+
+
 
 
 
