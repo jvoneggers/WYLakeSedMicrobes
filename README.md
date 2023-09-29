@@ -6,4 +6,4 @@ This repository contains the data and data analysis used for:
 
 Jordan Von Eggers, Nathan I. Wisnoski, John W. Calder, Eric Capo, Dulcinea Groff, Amy Krist, and Bryan Shuman. 
 
-This manuscript is currently in submission to Ecology Letters (Sept 14, 2024)
+This manuscript has been submitted to Ecology Letters on Sept 27, 2023.
