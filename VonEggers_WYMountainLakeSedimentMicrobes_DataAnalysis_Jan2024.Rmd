@@ -19,6 +19,7 @@ require(colorspace)
 require(pivottabler)
 require(reshape2)
 require(rioja)
+require(Biostrings)
 
 # require(iNEXT)
 # require(phangorn)
@@ -47,63 +48,63 @@ require(rioja)
 
 # Part III: Data Analysis
 
-## 1. Load data
+## 0. Load data
 
+For all numbered analyses, begin by loading the phyloseq object:
 ```{r}
-load("WyLakeMicrobes_Phyloseq_16Jan2024.RData")
+load("2024-01-19_VonEggers_WyLakeSedMicrobes_Phyloseq.RData")
 ```
 
 
-## 1. iCAMP community assembly
+## 1. Community assembly processes
 
-### a. make phylogenetic tree
+### a. Phylogenetic tree 
 
-#### i. subset ESVS with 10+ reads
-
-
+#### i. Subset ESVS with 10+ reads
 ```{r}
 ESV<-as.data.frame(otu_table(ps))
 ESV<-t(ESV)
 ESV<-ESV[order(rownames(ESV)),]
 
 table(colSums(ESV)<10)
+Sys.Date()
 # FALSE  TRUE 
-# 28488 64357
-#[1] "2024-01-16"
-mean(colSums(ESV)) #53 reads on average - "2024-01-16"
+# 28488 64357 
+# [1] "2024-01-19"
+
+mean(colSums(ESV)) #53 reads on average - "2024-01-19"
 
 lessthan10<-which(colSums(ESV)<10)
 ESV_10plusreads<-ESV[,-lessthan10]
 dim(ESV_10plusreads)
-# 478 28488 - 27May2023
+# 478 28488 - "2024-01-19"
 table(colSums(ESV_10plusreads)<10)# all FALSE
 ```
 
-#### ii. subset fasta file with sequences
+#### ii. Subset fasta file with sequences
 
-in local R, subset fasta file by the ESVs with 10+ reads (normalized reads)
-
+In local R, subset fasta file by the ESVs with 10+ reads (normalized reads)
 ```{r}
 seqs<-Biostrings::readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa") 
 seqs@ranges@NAMES<-stringr::str_split(seqs@ranges@NAMES,pattern = ";", 3, simplify = T)[,1]
 
 seqs_sub<-seqs[colnames(ESV_10plusreads)]
-table(seqs_sub@ranges@NAMES %in% colnames(ESV_10plusreads))
-table(colnames(ESV_10plusreads)%in%seqs_sub@ranges@NAMES)
+table(seqs_sub@ranges@NAMES %in% colnames(ESV_10plusreads)) # all TRUE
+table(colnames(ESV_10plusreads)%in%seqs_sub@ranges@NAMES) # all TRUE
 rm(list=ls()[! ls() %in% c("ESV_10plusreads", "seqs_sub" )])
-#save.image("WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads_16Jan2024.RData")
-#writeXStringSet(seqs_sub,filepath = "ESVs_with10ormorereads_forBeartooth_16Jan2024.fasta", format = "fasta")
+#save.image(paste0(Sys.Date(),"_WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads.RData"))
+#writeXStringSet(seqs_sub,filepath = paste0(Sys.Date(),"_ESVs_with10ormorereads_forBeartooth.fasta"), format = "fasta")
 ```
 
 copy the fasta file over to the supercomputer
 
 ```{bash}
-rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/ESVs_with10ormorereads_forBeartooth_16Jan2024.fasta jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/revision_analyses/decontam_dataset/phylogenetic_tree
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/2024-01-19_ESVs_with10ormorereads_forBeartooth.fasta jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree
 ```
 
-#### iii. make phylogenetic tree
+#### iii. Make phylogenetic tree
 
-using clustalo to align and then fasttree to make the tree
+Using clustalo to align and then fasttree to make the tree
 
 align_maketree.sh
 ```{bash}
@@ -119,27 +120,425 @@ align_maketree.sh
 
 module load arcc/1.0 miniconda3/4.12.0
 conda activate shotgun_env
-cd /project/seddna/jvonegge/WY_lake_microbes/16S/revision_analyses/decontam_dataset/phylogenetic_tree
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree
 
-clustalo -i ESVs_with10ormorereads_forBeartooth_16Jan2024.fasta -o tempfile_16Jan2024_muscled.fa -v --threads=6
+clustalo -i 2024-01-19_ESVs_with10ormorereads_forBeartooth.fasta -o 2024-01-19_tempfile_muscled.fa -v --threads=6
 
-FastTree -nt tempfile_16Jan2024_muscled.fa > ESVs_with10ormorereads_output_16Jan2024_muscled.nwk
-
+FastTree -nt 2024-01-19_tempfile_muscled.fa > 2024-01-19_ESVs_with10ormorereads_PhylogeneticTree.nwk
 ```
 
-
-Copy environment over to supercomputer
+Copy back to local computer
 ```{bash}
-rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads_16Jan2024.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/revision_analyses/decontam_dataset/iCAMP
+rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/2024-01-19_ESVs_with10ormorereads_PhylogeneticTree.nwk /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
+```
+
+#LEFT OFF HERE
+### b. Test for phylogenetic signal 
+
+Code for testing for phylgenetic signals provided by Dr. John Pearman at Cawthorn Institute in Nelson, NZ
+
+Subset ESV table for ESVs with 10+ reads for computational tractabili
+
+For computational tractability, we subset the phylogenetic tree (made with ESVs with 10 or more reads) by the most abundant ESVs in each depth bin (0-26 by 2)
+
+```{r}
+load("2024-01-19_VonEggers_WyLakeSedMicrobes_Phyloseq.RData")
+all_depths<-NULL
+i=1
+cm<-unique(ps_tr@sam_data$bin_depth)
+for(i in 1:length(cm)){
+  ps_tmp <- subset_samples(ps_tr, bin_depth==cm[i]) 
+  ps_tmp <- filter_taxa(ps_tmp, function(x) sum(x) > 0, TRUE)
+  means <- as.data.frame(rowMeans(ps_tmp@otu_table))
+  names(means)<-"val"
+  means$otu<-rownames(means)
+  avgabundtax<-means[order(means$val,decreasing=T),]$otu[1:3500]
+  all_depths<-c(all_depths,avgabundtax)
+}
+
+unique_alldepths<-unique(all_depths)
+length(unique_alldepths)
+
+my_subset <- subset(otu_table(ps), rownames(otu_table(ps)) %in% unique_alldepths)
+table(sort(rownames(otu_table(my_subset)))==sort(unique_alldepths)) #make sure this is all TRUE
+```
+
+all taxa but three match, so going ahead with using this
+OTU_log.p <- match.phylo.comm(tree, OTU_log)$comm
+[1] "Dropping taxa from the community because they are not present in the phylogeny:"
+[1] "centroid=otu32478" "centroid=otu44283"
+[3] "centroid=otu47385"
+tree_log.p <- match.phylo.comm(tree, OTU_log)$phy
+[1] "Dropping taxa from the community because they are not present in the phylogeny:"
+[1] "centroid=otu32478" "centroid=otu44283"
+[3] "centroid=otu47385"
+
+```{r}
+#Load phylogenetic tree
+phylo <- read.tree("ESVs_with10ormorereads_output_27May2023_muscled.nwk")
+#subset by the abundant 10875 ESVs
+physeq <- merge_phyloseq(my_subset, tax_table(ps), sample_data(ps), phylo)
+tree <- physeq@phy_tree
+# make sure only the 10875 ESVs are in the tree
+table(tree$tip.label%in%unique_alldepths) #all TRUE
+table(unique_alldepths%in%tree$tip.label) #all TRUE
+rm(physeq)
+
+#using just the 10875 most abundant ESVs
+#match up with metadata
+OTU<-as.data.frame(otu_table(my_subset))
+OTU<-t(OTU)
+OTU<-OTU[order(rownames(OTU)),] #site by species
+
+#order metadata
+metadata<-metadata[order(rownames(metadata)),] 
+#subset metadata
+metadata.a <- metadata %>% select(depth, elevation_meters,max_lake_depth, water_sample_ph_bot, water_sample_do_bot, water_sample_t_bot,pH,n_perc, c_perc)
+
+#make OTU and metadata match
+table(rownames(OTU)==rownames(metadata)) #all true
+
+
+#Predict the missing metadata (JVE: not very familiar with this part of John Pearman's code to predict missing metadata..)
+set.seed(496)
+
+metadata.1 <-
+  preProcess(metadata.a,
+             method = c("bagImpute"))
+
+metadata.2  <- 
+  predict(metadata.1 , metadata.a)
+
+
+OTU_log <- log(OTU + 1) #JVE: unsure why log + 1
+
+OTU_log.p <- match.phylo.comm(tree, OTU_log)$comm
+tree_log.p <- match.phylo.comm(tree, OTU_log)$phy
+
+phydist <- cophenetic(tree_log.p)
+
+#phylogenetic distance
+phydist_hel <- decostand(phydist, method="hellinger")
+
+#from site x species to species x site
+table <- t(OTU_log)
+
+env.var.names<-colnames(metadata.2)
+
+#loop through each environmental variable and create a list of each "final table"
+all_env.vars_tab<-list()
+q=1
+for(q in 1:length(env.var.names)){
+
+table_env<-rbind(metadata.2[,q],table)
+rownames(table_env)[1]<-"env.var"
+
+table_w <- t(table_env) #first column environmental variable 
+
+headTable <- colnames(table_w) 
+x <- headTable[1] # The first column is a constant env.var and is being compared to OTU
+
+
+# Create the final_table empty
+
+m <- matrix(0, nrow = 0, ncol = 3) 
+final_table <- data.frame(m)
+colnames(final_table)  <- c('ymax','d50', 'xmax') 
+
+# the for loop, to get all otus 1 by 1 compared to env.var
+
+for(i in seq(2,length(headTable),1)) #start at 2 because the 1 is the Eh_mv
+{
+  y <- headTable[i] # get otu name
+  tablei <-  table_w[,c(x,y)] # extract 2 columns to create a new table
+  
+  head  <- colnames(tablei)
+  
+  ymax = which.max(tablei[,2]) # get the max relative abundance of the OTU
+  
+  MaxRow <- tablei[ymax,] # create a table with the line of the max OTU value
+ 
+  tableiInf <- subset(tablei,tablei[,1]<= MaxRow[1]) #create two tables greater and lower than the x coord
+  tableiSup <- subset(tablei,tablei[,1]>= MaxRow[1]) #of the max
+  
+  tableiInfno0 <- subset(tableiInf,tableiInf[,2]>(MaxRow[2]/20)) #remove the observations where the relative OTU abundance is 0
+  tableiSupno0 <- subset(tableiSup,tableiSup[,2]>(MaxRow[2]/20)) #remove the observations where the relative OTU abundance is 0
+  
+  
+  #Determine the lowest and highest Eh value where you find the OTU
+  
+  xInf <- min(tableiInfno0[,1])
+  xSup <- max(tableiSupno0[,1])
+  
+  # calculate the d50
+  
+  d50  <- 0.68*abs(xSup-xInf)/2
+  #JVE - why is this 0.68?
+  
+  # create the final table for the otu in the loop
+  
+  tablei_fin  <- matrix(c(MaxRow[2],d50,MaxRow[1]),ncol=3)
+  rownames(tablei_fin)  <- c(head[2])
+  colnames(tablei_fin)  <- c('ymax','d50', 'xmax')
+  
+  # add to the final_table the values for each otu 
+  final_table <- rbind(final_table,tablei_fin)
+  
+  
+}
+#write the table and put into a list
+write.table(final_table, paste("niche_", env.var.names[q], "_9Jan2023.txt", sep=""), sep="\t")
+all_env.vars_tab[[q]]<-final_table
+}
+
+#remove all but the two objects needed for the mantel correlogs
+rm(list=ls()[! ls() %in% c("all_env.vars_tab","phydist_hel")])
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+
 ```
 
 
+```{bash}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal
+
+PrayingMantus@0613@
+```
+
+#### i) run on Beartooth
+
+phylogenetic_signal_1.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[1]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_1<-mantel.correlog(env_dist,phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_1.RData")
+
+```
+
+phylogenetic_signal_2.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[2]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_2<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_2.RData")
+
+```
+
+phylogenetic_signal_3.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[3]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_3<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_3.RData")
+
+```
+
+phylogenetic_signal_4.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[4]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_4<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_4.RData")
+
+```
+
+phylogenetic_signal_5.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[5]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_5<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_5.RData")
+
+```
+
+phylogenetic_signal_6.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[6]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_6<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_6.RData")
+
+```
+
+phylogenetic_signal_7.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[7]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_7<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_7.RData")
+
+```
+
+phylogenetic_signal_8.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[8]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_8<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_8.RData")
+
+```
+
+phylogenetic_signal_9.R
+
+```{r}
+require(vegan)
+load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
+sub1<-all_env.vars_tab[[9]]
+sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
+env_dist<-vegdist(sub2$xmax, method="euclidean")
+mc_result_9<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
+save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_9.RData")
+
+```
+
+run_phylogenetic_signal.sh
+
+```{bash}
+#!/bin/bash
+#SBATCH --job-name phylo_signal
+#SBATCH --mem=20GB
+#SBATCH --time=6-00:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --account=microbiome
+#SBATCH --output=phylo_signal_%A.out
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=jvonegge@uwyo.edu
+
+module load gcc/12.2.0 r/4.2.2
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal
+date
+
+srun Rscript phylogenetic_signal_1.R
+echo "srun Rscript phylogenetic_signal_1.R"
+
+srun Rscript phylogenetic_signal_2.R
+echo "srun Rscript phylogenetic_signal_2.R"
+
+srun Rscript phylogenetic_signal_3.R
+echo "srun Rscript phylogenetic_signal_3.R"
+
+srun Rscript phylogenetic_signal_4.R
+echo "srun Rscript phylogenetic_signal_4.R"
+
+srun Rscript phylogenetic_signal_5.R
+echo "srun Rscript phylogenetic_signal_5.R"
+
+srun Rscript phylogenetic_signal_6.R
+echo "srun Rscript phylogenetic_signal_6.R"
+
+srun Rscript phylogenetic_signal_7.R
+echo "srun Rscript phylogenetic_signal_7.R"
+
+srun Rscript phylogenetic_signal_8.R
+echo "srun Rscript phylogenetic_signal_8.R"
+
+srun Rscript phylogenetic_signal_9.R
+echo "srun Rscript phylogenetic_signal_9.R"
+
+
+echo "finished correlogs"
+date
+
+```
+
+copy folder back to computer
+
+```{bash}
+rsync -r jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
+```
+
+#### ii) Plot mantel correlograms
+
+```{r}
+env.var.names<-c("Sediment depth (cm)",               "Elevation (m)"   , "Max lake depth (m)" ,    
+"Bottom water pH", "Bottom water dissolved oxygen", "Bottom water temperature" ,
+"Sediment pH"                ,  "Sediment percent nitrogen"            ,  "Sediment percent carbon"    )  
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_1.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_2.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_3.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_4.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_5.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_6.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_7.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_8.RData")
+load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_9.RData")
+
+figs<-list()
+figs[[1]]<-mc_result_1
+figs[[2]]<-mc_result_2
+figs[[3]]<-mc_result_3
+figs[[4]]<-mc_result_4
+figs[[5]]<-mc_result_5
+figs[[6]]<-mc_result_6
+figs[[7]]<-mc_result_7
+figs[[8]]<-mc_result_8
+figs[[9]]<-mc_result_9
+
+i=1
+pdf("Figures/SupplementaryFigures/Phylogenetic_signal_mantel_corr_July2023.pdf", height = 8, width=10)
+par(mfrow=c(3,3), mar=c(4,4,4,2))
+for(i in 1:9){
+plot(figs[[i]])
+title(main=env.var.names[i])
+}
+dev.off()
+
+
+```
+
+
+
+
+
+
+
+#LEFT OFF HERE
+
+### b. iCAMP on the supercomputer
+
+Using the qpen function with ESVs with 10+ reads (the ESV abundance table and the phylogenetic tree)
+
+Copy R environment over to supercomputer
+```{bash}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/2024-01-19_WyLakeMicrobes_PhyloseqEnv_foriCAMP_ESVs10PlusReads.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/iCAMP
+```
+
+Move the phylogenetic tree file over into the iCAMP folder on the supercomputer
 ```{bash}
 cp ESVs_with10ormorereads_output_16Jan2024_muscled.nwk ../iCAMP
 ```
-
-
-### b. qpen ESVs with 10+ reads
 
 qpen_function.R
 ```{r}
@@ -2046,99 +2445,6 @@ dev.off()
 
 
 
-## 6. Island Biogeography for poster
-
-Merge in the lake area measurements from Google Earth Pro polygons, plot whether lake depth increases with lake area. Generally true, but some exceptions of large shallow lakes. 
-```{r}
-lkarea<-read.csv("/Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/Metadata/metadata_lakearea_27May2023.csv",header=T)
-
-meta_merged<-merge(metadata,lkarea,by="lake_name")
-
-#plot lake area by lake depth
-
-uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth)
-uniq_lake<-unique(uniq_lake)
-plot(uniq_lake$lakearea_squaremeters,uniq_lake$max_lake_depth, pch=16, xlab="Lake area (sq m)",ylab="Max. lake depth")
-
-```
-
-
-```{r}
-ESV<-as.data.frame(otu_table(ps))
-ESV<-t(ESV)
-
-#calculate the number of ESVs for each sediment core
-LkDr_ESVs<-data.frame(lake_drive=NULL, num_samples=NULL,num_ESVs=NULL)
-i=1
-for(i in 1:length(unique(metadata$lake_drive))){
-        #for each lake_drive, grab all the sample names in metadata
-        samples<-metadata[metadata$lake_drive==unique(metadata$lake_drive)[i],]$samp_names
-        #pull out number of ESVs from the table 
-        sub_ESV<-as.data.frame(ESV[rownames(ESV)%in%samples,])  
-        colsumsESV<-as.data.frame(colSums(sub_ESV))
-       LkDr_ESVs<-rbind(LkDr_ESVs,data.frame(lake_drive=unique(metadata$lake_drive)[i], num_samples=length(samples),num_ESVs=colSums(colsumsESV != 0)))
-}
-
-#this didn't work if just one sample so updated the last two manually
-
-LkDr_ESVs[47,3]<-2003
-LkDr_ESVs[48,3]<-3570
-
-```
-
-Something to think about is that some lakes have MORE sediment samples, can plot this
-```{r}
-plot(LkDr_ESVs$num_samples, LkDr_ESVs$num_ESVs, pch=16, ylab="Total ESVs per core", xlab="Sediment samples")
-#cores must have at least 5 samples
-
-#remove lake_drives with less than 5 samples
-LkDr_ESVs<-LkDr_ESVs[LkDr_ESVs$num_samples>4,]
-
-#merge with lake metadata
-uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth, lake_drive, mountain_range)
-uniq_lake<-unique(uniq_lake)
-
-#merge with lake metadata
-isl_bio<-merge(LkDr_ESVs,uniq_lake, by="lake_drive")
-
-isl_bio$col<-as.factor(isl_bio$mountain_range)
-isl_bio$col<-as.numeric(isl_bio$col)
-isl_bio$lakearea_squarekm<-isl_bio$lakearea_squaremeters/1000000
-```
-
-plot number of taxa with lake depth, lake size, and lake depth x size
-```{r}
-cols<-met.brewer(name="Egypt", n=4, type="discrete")
-cols<-c("#000000",cols[1],cols[4],cols[2],cols[3])
-full_cols<-cols
-#cols<-paste(cols,"99", sep="")
-point_types<-c(16,17,18,19,20)
-
-
-
-pdf("Figures/ESVs_lakearea_29May2023.pdf", height=4,width=5)
-par(mar=c(4,6,2,2))
-expression<-expression(Lake ~ area ~ (km^2))
-plot(isl_bio$lakearea_squarekm,isl_bio$num_ESVs, pch=16, cex=2, ylab="Exact sequence variants \n(ESVs) per core" ,col=cols[isl_bio$col], xlab=expression)
-legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
-dev.off()
-
-pdf("Figures/ESVs_lakevolume_29May2023.pdf", height=4,width=5)
-par(mar=c(4,6,2,2))
-expression<-expression(Lake ~ volume ~ (m^3))
-plot((isl_bio$lakearea_squaremeters * isl_bio$max_lake_depth),isl_bio$num_ESVs, cex=2,pch=16, ylab="Exact sequence variants \n(ESVs) per core",col=cols[isl_bio$col], xlab=expression)
-legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
-dev.off()
-```
-
-
-
-
-```{r}
-plot(isl_bio$max_lake_depth,isl_bio$num_ESVs,  ylab="ESVs per core", xlab="Lake depth (m)", col=cols[isl_bio$col],pch=point_types[isl_bio$col])
-```
-
-
 
 ## 7. Stats for manuscript
 ```{r}
@@ -2896,401 +3202,6 @@ dev.off()
 
 
 ```
-
-
-
-
-## 9. Test for phylogenetic signal (Pearman code)
-
-Subset ESV table for ESVs with 10+ reads for computational tractability
-
-```{bash}
-rsync jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylogenetic_tree/ESVs_with10ormorereads_output_27May2023_muscled.nwk /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
-
-```
-
-
-I can't to this with 28,480 ESVs (ESVs with 10+ reads, so will use the most abundant ESVs instead)
-
-```{r}
-load("WyLakeMicrobes_Phyloseq_11May2023.RData")
-all_depths<-NULL
-i=1
-cm<-unique(ps_tr@sam_data$bin_depth)
-for(i in 1:length(cm)){
-  ps_tmp <- subset_samples(ps_tr, bin_depth==cm[i]) 
-  ps_tmp <- filter_taxa(ps_tmp, function(x) sum(x) > 0, TRUE)
-  means <- as.data.frame(rowMeans(ps_tmp@otu_table))
-  names(means)<-"val"
-  means$otu<-rownames(means)
-  avgabundtax<-means[order(means$val,decreasing=T),]$otu[1:3500]
-  all_depths<-c(all_depths,avgabundtax)
-}
-
-unique_alldepths<-unique(all_depths)
-length(unique_alldepths)
-
-my_subset <- subset(otu_table(ps), rownames(otu_table(ps)) %in% unique_alldepths)
-table(sort(rownames(otu_table(my_subset)))==sort(unique_alldepths)) #make sure this is all TRUE
-```
-
-all taxa but three match, so going ahead with using this
-OTU_log.p <- match.phylo.comm(tree, OTU_log)$comm
-[1] "Dropping taxa from the community because they are not present in the phylogeny:"
-[1] "centroid=otu32478" "centroid=otu44283"
-[3] "centroid=otu47385"
-tree_log.p <- match.phylo.comm(tree, OTU_log)$phy
-[1] "Dropping taxa from the community because they are not present in the phylogeny:"
-[1] "centroid=otu32478" "centroid=otu44283"
-[3] "centroid=otu47385"
-
-```{r}
-#Load phylogenetic tree
-phylo <- read.tree("ESVs_with10ormorereads_output_27May2023_muscled.nwk")
-#subset by the abundant 10875 ESVs
-physeq <- merge_phyloseq(my_subset, tax_table(ps), sample_data(ps), phylo)
-tree <- physeq@phy_tree
-# make sure only the 10875 ESVs are in the tree
-table(tree$tip.label%in%unique_alldepths) #all TRUE
-table(unique_alldepths%in%tree$tip.label) #all TRUE
-rm(physeq)
-
-#using just the 10875 most abundant ESVs
-#match up with metadata
-OTU<-as.data.frame(otu_table(my_subset))
-OTU<-t(OTU)
-OTU<-OTU[order(rownames(OTU)),] #site by species
-
-#order metadata
-metadata<-metadata[order(rownames(metadata)),] 
-#subset metadata
-metadata.a <- metadata %>% select(depth, elevation_meters,max_lake_depth, water_sample_ph_bot, water_sample_do_bot, water_sample_t_bot,pH,n_perc, c_perc)
-
-#make OTU and metadata match
-table(rownames(OTU)==rownames(metadata)) #all true
-
-
-#Predict the missing metadata (JVE: not very familiar with this part of John Pearman's code to predict missing metadata..)
-set.seed(496)
-
-metadata.1 <-
-  preProcess(metadata.a,
-             method = c("bagImpute"))
-
-metadata.2  <- 
-  predict(metadata.1 , metadata.a)
-
-
-OTU_log <- log(OTU + 1) #JVE: unsure why log + 1
-
-OTU_log.p <- match.phylo.comm(tree, OTU_log)$comm
-tree_log.p <- match.phylo.comm(tree, OTU_log)$phy
-
-phydist <- cophenetic(tree_log.p)
-
-#phylogenetic distance
-phydist_hel <- decostand(phydist, method="hellinger")
-
-#from site x species to species x site
-table <- t(OTU_log)
-
-env.var.names<-colnames(metadata.2)
-
-#loop through each environmental variable and create a list of each "final table"
-all_env.vars_tab<-list()
-q=1
-for(q in 1:length(env.var.names)){
-
-table_env<-rbind(metadata.2[,q],table)
-rownames(table_env)[1]<-"env.var"
-
-table_w <- t(table_env) #first column environmental variable 
-
-headTable <- colnames(table_w) 
-x <- headTable[1] # The first column is a constant env.var and is being compared to OTU
-
-
-# Create the final_table empty
-
-m <- matrix(0, nrow = 0, ncol = 3) 
-final_table <- data.frame(m)
-colnames(final_table)  <- c('ymax','d50', 'xmax') 
-
-# the for loop, to get all otus 1 by 1 compared to env.var
-
-for(i in seq(2,length(headTable),1)) #start at 2 because the 1 is the Eh_mv
-{
-  y <- headTable[i] # get otu name
-  tablei <-  table_w[,c(x,y)] # extract 2 columns to create a new table
-  
-  head  <- colnames(tablei)
-  
-  ymax = which.max(tablei[,2]) # get the max relative abundance of the OTU
-  
-  MaxRow <- tablei[ymax,] # create a table with the line of the max OTU value
- 
-  tableiInf <- subset(tablei,tablei[,1]<= MaxRow[1]) #create two tables greater and lower than the x coord
-  tableiSup <- subset(tablei,tablei[,1]>= MaxRow[1]) #of the max
-  
-  tableiInfno0 <- subset(tableiInf,tableiInf[,2]>(MaxRow[2]/20)) #remove the observations where the relative OTU abundance is 0
-  tableiSupno0 <- subset(tableiSup,tableiSup[,2]>(MaxRow[2]/20)) #remove the observations where the relative OTU abundance is 0
-  
-  
-  #Determine the lowest and highest Eh value where you find the OTU
-  
-  xInf <- min(tableiInfno0[,1])
-  xSup <- max(tableiSupno0[,1])
-  
-  # calculate the d50
-  
-  d50  <- 0.68*abs(xSup-xInf)/2
-  #JVE - why is this 0.68?
-  
-  # create the final table for the otu in the loop
-  
-  tablei_fin  <- matrix(c(MaxRow[2],d50,MaxRow[1]),ncol=3)
-  rownames(tablei_fin)  <- c(head[2])
-  colnames(tablei_fin)  <- c('ymax','d50', 'xmax')
-  
-  # add to the final_table the values for each otu 
-  final_table <- rbind(final_table,tablei_fin)
-  
-  
-}
-#write the table and put into a list
-write.table(final_table, paste("niche_", env.var.names[q], "_9Jan2023.txt", sep=""), sep="\t")
-all_env.vars_tab[[q]]<-final_table
-}
-
-#remove all but the two objects needed for the mantel correlogs
-rm(list=ls()[! ls() %in% c("all_env.vars_tab","phydist_hel")])
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-
-```
-
-
-```{bash}
-rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal
-
-PrayingMantus@0613@
-```
-
-#### i) run on Beartooth
-
-phylogenetic_signal_1.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[1]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_1<-mantel.correlog(env_dist,phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_1.RData")
-
-```
-
-phylogenetic_signal_2.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[2]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_2<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_2.RData")
-
-```
-
-phylogenetic_signal_3.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[3]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_3<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_3.RData")
-
-```
-
-phylogenetic_signal_4.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[4]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_4<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_4.RData")
-
-```
-
-phylogenetic_signal_5.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[5]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_5<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_5.RData")
-
-```
-
-phylogenetic_signal_6.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[6]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_6<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_6.RData")
-
-```
-
-phylogenetic_signal_7.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[7]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_7<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_7.RData")
-
-```
-
-phylogenetic_signal_8.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[8]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_8<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_8.RData")
-
-```
-
-phylogenetic_signal_9.R
-
-```{r}
-require(vegan)
-load("WyLakeMicrobes_10July2023_phylogeneticsignal_forBeartooth.RData")
-sub1<-all_env.vars_tab[[9]]
-sub2<-sub1[match(rownames(phydist_hel), rownames(sub1)), ]
-env_dist<-vegdist(sub2$xmax, method="euclidean")
-mc_result_9<-mantel.correlog(env_dist, D.geo = phydist_hel, nperm=999)
-save.image("WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_9.RData")
-
-```
-
-run_phylogenetic_signal.sh
-
-```{bash}
-#!/bin/bash
-#SBATCH --job-name phylo_signal
-#SBATCH --mem=20GB
-#SBATCH --time=6-00:00:00
-#SBATCH --cpus-per-task=1
-#SBATCH --account=microbiome
-#SBATCH --output=phylo_signal_%A.out
-#SBATCH --mail-type=ALL
-#SBATCH --mail-user=jvonegge@uwyo.edu
-
-module load gcc/12.2.0 r/4.2.2
-cd /project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal
-date
-
-srun Rscript phylogenetic_signal_1.R
-echo "srun Rscript phylogenetic_signal_1.R"
-
-srun Rscript phylogenetic_signal_2.R
-echo "srun Rscript phylogenetic_signal_2.R"
-
-srun Rscript phylogenetic_signal_3.R
-echo "srun Rscript phylogenetic_signal_3.R"
-
-srun Rscript phylogenetic_signal_4.R
-echo "srun Rscript phylogenetic_signal_4.R"
-
-srun Rscript phylogenetic_signal_5.R
-echo "srun Rscript phylogenetic_signal_5.R"
-
-srun Rscript phylogenetic_signal_6.R
-echo "srun Rscript phylogenetic_signal_6.R"
-
-srun Rscript phylogenetic_signal_7.R
-echo "srun Rscript phylogenetic_signal_7.R"
-
-srun Rscript phylogenetic_signal_8.R
-echo "srun Rscript phylogenetic_signal_8.R"
-
-srun Rscript phylogenetic_signal_9.R
-echo "srun Rscript phylogenetic_signal_9.R"
-
-
-echo "finished correlogs"
-date
-
-```
-
-copy folder back to computer
-
-```{bash}
-rsync -r jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/phylo_signal /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes
-```
-
-#### ii) Plot mantel correlograms
-
-```{r}
-env.var.names<-c("Sediment depth (cm)",               "Elevation (m)"   , "Max lake depth (m)" ,    
-"Bottom water pH", "Bottom water dissolved oxygen", "Bottom water temperature" ,
-"Sediment pH"                ,  "Sediment percent nitrogen"            ,  "Sediment percent carbon"    )  
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_1.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_2.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_3.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_4.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_5.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_6.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_7.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_8.RData")
-load("phylo_signal/WyLakeMicrobes_10July2023_phylogeneticsignal_mantelcorrresult_9.RData")
-
-figs<-list()
-figs[[1]]<-mc_result_1
-figs[[2]]<-mc_result_2
-figs[[3]]<-mc_result_3
-figs[[4]]<-mc_result_4
-figs[[5]]<-mc_result_5
-figs[[6]]<-mc_result_6
-figs[[7]]<-mc_result_7
-figs[[8]]<-mc_result_8
-figs[[9]]<-mc_result_9
-
-i=1
-pdf("Figures/SupplementaryFigures/Phylogenetic_signal_mantel_corr_July2023.pdf", height = 8, width=10)
-par(mfrow=c(3,3), mar=c(4,4,4,2))
-for(i in 1:9){
-plot(figs[[i]])
-title(main=env.var.names[i])
-}
-dev.off()
-
-
-```
-
-
-
 
 
 

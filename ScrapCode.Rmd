@@ -5749,3 +5749,98 @@ sum(colSums(otu_table_no_blanks[rownames(otu_table_no_blanks)%in%contaminants,])
 
 
 
+
+
+## 6. Island Biogeography for poster
+
+Merge in the lake area measurements from Google Earth Pro polygons, plot whether lake depth increases with lake area. Generally true, but some exceptions of large shallow lakes. 
+```{r}
+lkarea<-read.csv("/Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/Metadata/metadata_lakearea_27May2023.csv",header=T)
+
+meta_merged<-merge(metadata,lkarea,by="lake_name")
+
+#plot lake area by lake depth
+
+uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth)
+uniq_lake<-unique(uniq_lake)
+plot(uniq_lake$lakearea_squaremeters,uniq_lake$max_lake_depth, pch=16, xlab="Lake area (sq m)",ylab="Max. lake depth")
+
+```
+
+
+```{r}
+ESV<-as.data.frame(otu_table(ps))
+ESV<-t(ESV)
+
+#calculate the number of ESVs for each sediment core
+LkDr_ESVs<-data.frame(lake_drive=NULL, num_samples=NULL,num_ESVs=NULL)
+i=1
+for(i in 1:length(unique(metadata$lake_drive))){
+        #for each lake_drive, grab all the sample names in metadata
+        samples<-metadata[metadata$lake_drive==unique(metadata$lake_drive)[i],]$samp_names
+        #pull out number of ESVs from the table 
+        sub_ESV<-as.data.frame(ESV[rownames(ESV)%in%samples,])  
+        colsumsESV<-as.data.frame(colSums(sub_ESV))
+       LkDr_ESVs<-rbind(LkDr_ESVs,data.frame(lake_drive=unique(metadata$lake_drive)[i], num_samples=length(samples),num_ESVs=colSums(colsumsESV != 0)))
+}
+
+#this didn't work if just one sample so updated the last two manually
+
+LkDr_ESVs[47,3]<-2003
+LkDr_ESVs[48,3]<-3570
+
+```
+
+Something to think about is that some lakes have MORE sediment samples, can plot this
+```{r}
+plot(LkDr_ESVs$num_samples, LkDr_ESVs$num_ESVs, pch=16, ylab="Total ESVs per core", xlab="Sediment samples")
+#cores must have at least 5 samples
+
+#remove lake_drives with less than 5 samples
+LkDr_ESVs<-LkDr_ESVs[LkDr_ESVs$num_samples>4,]
+
+#merge with lake metadata
+uniq_lake<- meta_merged %>% select(lake_name,lakearea_squaremeters,max_lake_depth, lake_drive, mountain_range)
+uniq_lake<-unique(uniq_lake)
+
+#merge with lake metadata
+isl_bio<-merge(LkDr_ESVs,uniq_lake, by="lake_drive")
+
+isl_bio$col<-as.factor(isl_bio$mountain_range)
+isl_bio$col<-as.numeric(isl_bio$col)
+isl_bio$lakearea_squarekm<-isl_bio$lakearea_squaremeters/1000000
+```
+
+plot number of taxa with lake depth, lake size, and lake depth x size
+```{r}
+cols<-met.brewer(name="Egypt", n=4, type="discrete")
+cols<-c("#000000",cols[1],cols[4],cols[2],cols[3])
+full_cols<-cols
+#cols<-paste(cols,"99", sep="")
+point_types<-c(16,17,18,19,20)
+
+
+
+pdf("Figures/ESVs_lakearea_29May2023.pdf", height=4,width=5)
+par(mar=c(4,6,2,2))
+expression<-expression(Lake ~ area ~ (km^2))
+plot(isl_bio$lakearea_squarekm,isl_bio$num_ESVs, pch=16, cex=2, ylab="Exact sequence variants \n(ESVs) per core" ,col=cols[isl_bio$col], xlab=expression)
+legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
+dev.off()
+
+pdf("Figures/ESVs_lakevolume_29May2023.pdf", height=4,width=5)
+par(mar=c(4,6,2,2))
+expression<-expression(Lake ~ volume ~ (m^3))
+plot((isl_bio$lakearea_squaremeters * isl_bio$max_lake_depth),isl_bio$num_ESVs, cex=2,pch=16, ylab="Exact sequence variants \n(ESVs) per core",col=cols[isl_bio$col], xlab=expression)
+legend("topright",title="Mountain range", c("Beartooth" , "Bighorn"  ,  "Snowy" ,     "Wind River"), bty="n",pt.cex=2, col=full_cols, pch=16)
+dev.off()
+```
+
+
+
+
+```{r}
+plot(isl_bio$max_lake_depth,isl_bio$num_ESVs,  ylab="ESVs per core", xlab="Lake depth (m)", col=cols[isl_bio$col],pch=point_types[isl_bio$col])
+```
+
+

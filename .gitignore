@@ -36,9 +36,7 @@ Figures
 Metadata
 OriginalFiles
 .DS_Store
-qpen_10plusESVs_geodist_29May2023.csv
-2023May26_HillNumbersNormalized.txt
-WYMountainLakeSedimentMicrobes.Rmd
-WyLakeMicrobes_Phyloseq_11May2023.RData
 2024-01-19_VonEggers_WyLakeSedMicrobes_Phyloseq.RData
 ScrapCode.Rmd
+2024-01-19_ESVs_with10ormorereads_forBeartooth.fasta
+2024-01-19_WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads.RData
