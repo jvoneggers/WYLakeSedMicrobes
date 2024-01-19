@@ -1,0 +1,1445 @@
+---
+title: "WY Lake Sediment Prokaryotic Community Analyses"
+author: "Jordan Von Eggers"
+date: "17 Jan 2024"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+# Load packages
+```{r}
+require(tidyverse)
+require(vegan)
+require(phyloseq)
+require(decontam)
+sessionInfo()
+```
+R version 4.2.1 (2022-06-23)
+Platform: x86_64-apple-darwin17.0 (64-bit)
+Running under: macOS Monterey 12.6.7
+
+other attached packages:
+ [1] decontam_1.16.0 phyloseq_1.42.0 vegan_2.6-4     lattice_0.22-5  permute_0.9-7   lubridate_1.9.3 forcats_1.0.0  
+ [8] stringr_1.5.1   dplyr_1.1.4     purrr_1.0.2     readr_2.1.5     tidyr_1.3.0     tibble_3.2.1    ggplot2_3.4.4  
+[15] tidyverse_2.0.0
+
+# Part I: Extract files and assign taxonomy
+
+## 1. Grab files off Beartooth supercomputer
+
+### a. Process raw sequences 
+This is the linux code used by Genome Technology Lab at University of Wyoming to trim primers, filter reads, merge pairs, and truncate and join pairs that didn't merge
+```{bash}
+# trimming
+system("cutadapt --quiet -g $primers{$locus}{'R1'} $R1 -e 0.25 --cores=32 | sed 's/\\s/_/g' | sed -e 's/^\@16/\@rna
+16/' - | sed -e 's/-/_/g' > $R1tmp");
+system("cutadapt --quiet -g $primers{$locus}{'R2'} $R2 -e 0.25 --cores=32 | sed 's/\\s/_/g' | sed -e 's/^\@16/\@rna
+16/' - | sed -e 's/-/_/g' > $R2tmp");
+
+# remove low-complexity reads corresponding to coligos
+system("usearch -filter_lowc $R1tmp -reverse $R2tmp -output $trimR1 -output2 $trimR2");
+unlink ($R1tmp, $R2tmp);
+# merging and filtering
+system("vsearch --fastq_mergepairs $trimR1 --reverse $trimR2 --fastqout - --fastq_maxdiffs 12 --fastq_minovlen 10 --fastq_minmergelen 60 --fastqout_notmerged_fwd $unmergedR1 --fastqout_notmerged_rev $unmergedR2 --threads 32 2> mergestats.txt | vsearch --fastq_filter - --fastq_maxee 1 --threads 32 --fastaout $filteredmergedfile  2> filterstats.
+txt");
+## uses redirection of standard error (2>), standard out passes through pipe
+
+if(-e $unmergedR1 && -e $unmergedR2){
+    print "Work with unmerged reads\n";
+    $R1tmpA = $unmergedR1;
+    $R1tmpA =~ s/$/tmpA/;
+    $R2tmpA = $unmergedR2;
+    $R2tmpA =~ s/$/tmpA/;
+    $R1tmpB = $unmergedR1;
+    $R1tmpB =~ s/$/tmpB/;
+    $R2tmpB = $unmergedR2;
+    $R2tmpB =~ s/$/tmpB/;
+    ##Filter reads that didn’t merge using:
+    system("/project/microbiome/bin/fastp --in1 $unmergedR1 --in2 $unmergedR2 -q 15 -u 40 -l 107 --out1  $R1tmpA --
+out2 $R2tmpA --thread 16");
+    print "fastp complete\n";
+    ## Truncate and join reads that didn’t merge
+    system("vsearch --fastx_filter $R1tmpA --fastq_trunclen 215 --fastqout $R1tmpB --threads 32");
+    system("vsearch --fastx_filter $R2tmpA --fastq_trunclen 215 --fastqout $R2tmpB --threads 32");
+    print "vsearch step1 complete\n";
+    if(-e $R1tmpB && -e $R1tmpB){ 
+        system("vsearch --fastq_join $R1tmpB --reverse $R2tmpB --fastaout $joinedfile --threads 32");
+        unlink($R1tmpA, $R2tmpA, $R1tmpB, $R2tmpB);
+    }
+    print "vsearch step2 complete\n";
+}
+```
+
+### b. Make OTU and ESV tables
+This linux code was ran by Genome Technology Lab at University of Wyoming to identify exact sequence variants (ESVs) and make ESV and OTU tables based off those sequences 
+```{bash}
+foreach my $tfmdirectory (sort keys %allprojectsotu){
+    # print $tfmdirectory, " -- " , $allprojectsotu{$tfmdirectory}, "\n";
+    $job = '';
+    unless(-e $allprojectsotu{$tfmdirectory}){ # this is the otu directory
+	mkpath $allprojectsotu{$tfmdirectory};
+    }
+
+    $job .= "cd $allprojectsotu{$tfmdirectory};\n"; # this is the otu directory
+    $job .= "cat $tfmdirectory/*tfmergedreads.fa $tfmdirectory/joined/*tfmergedreads.fa | vsearch --derep_fulllength - --threads 32 --output uniqueSequences.fa --sizeout;\n";
+    $job .= "vsearch --cluster_unoise uniqueSequences.fa --relabel 'otu' --sizein --sizeout --consout zotus.fa --minsize 8 ;\n";
+    $job .= "vsearch --uchime3_denovo zotus.fa --nonchimeras zotus_nonchimeric.fa --threads 32;\n";
+    $job .= "cat $tfmdirectory/*tfmergedreads.fa $tfmdirectory/joined/*tfmergedreads.fa | vsearch --usearch_global - --db zotus_nonchimeric.fa --otutabout - --id 0.99 --threads 32 | sed 's/^#OTU ID/OTUID/' > 'otutable';\n";
+    $job .= "cat $tfmdirectory/*tfmergedreads.fa $tfmdirectory/joined/*tfmergedreads.fa | vsearch --search_exact - --db zotus_nonchimeric.fa --otutabout - --threads 32 | sed 's/^#OTU ID/OTUID/' > 'otutable.esv';\n";
+   $job .= "cat $tfmdirectory/*tfmergedreads.fa $tfmdirectory/joined/*tfmergedreads.fa | vsearch --search_exact - --db zotus_nonchimeric.fa --biomout otu.esv.biom.json --threads 32\n";
+    push @jobarray, $job, 
+}
+
+```
+
+## 2. Assigning taxonomy
+copy the SILVA training dataset v 138.1 over for DADA2
+```{bash}
+rsync /Users/jordanscheibe/Library/CloudStorage/OneDrive-UniversityofWyoming/LakeSedDNA/Data/WYLakeSedMicrobes/WYLakeSedMicrobes/silva_nr99_v138.1_wSpecies_train_set.fa.gz jvonegge@beartooth.arcc.uwyo.edu:/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database
+```
+
+Using the maintained datasets from DADA2 hosted on Zenodo
+
+McLaren, Michael R., & Callahan, Benjamin J. (2021). Silva 138.1 prokaryotic SSU taxonomic training data formatted for DADA2 [Data set]. Zenodo. https://doi.org/10.5281/zenodo.4587955
+
+First, I read in the fasta file with sequences, and remove three duplicates (that aren't in the ESV table) and assign taxonomy using DADA2.
+
+runR_assignTaxonomy_dada2.sh
+```{bash}
+#!/bin/bash
+#SBATCH --job-name assign_tax_dada2
+#SBATCH --mem=100GB
+#SBATCH --time=3-00:00:00
+#SBATCH --cpus-per-task=1
+#SBATCH --account=microbiome
+#SBATCH --output=assign_tax_dada2_%A.out
+hostname; date
+module load miniconda3/4.12.0
+source activate dada2_env
+cd /project/seddna/jvonegge/WY_lake_microbes/16S/assign_taxonomy/dada2
+srun Rscript assignTaxonomy_dada2.R
+echo "srun Rscript assignTaxonomy_dada2.R"
+source deactivate dada2_env
+echo "finished assigntax JV"
+date
+```
+
+assignTaxonomy_dada2.R
+```{r}
+require(dada2)
+require(Biostrings)
+require(stringr)
+fasta <- readDNAStringSet("/project/seddna/jvonegge/WY_lake_microbes/16S/original_files/zotus_nonchimeric.fa")
+
+removefromfasta<-c("centroid=otu50237;seqs=1;size=53","centroid=otu52917;seqs=1;size=48", "centroid=otu55415;seqs=1;size=44")
+fasta<-fasta[!names(fasta) %in% removefromfasta]
+rm(removefromfasta)
+
+tax_table <- assignTaxonomy(fasta, "/project/seddna/jvonegge/WY_lake_microbes/16S/reference_database/silva_nr99_v138.1_wSpecies_train_set.fa.gz")
+write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv")
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
+
+tax_table<-merge(tax_table,df, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+write.csv(tax_table,"Silva138_assignedTaxonomy_toSpecies_28Apr2023.csv")
+
+```
+This all assigned to the "Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv" object and then I got an error afterwards in the outfile because of the merging (didn't change the tax_table column to "seq"), see next chunk below for correction
+
+copy back to computer and add in the taxa names by merging by sequences
+```{r}
+require(dada2)
+require(Biostrings)
+require(stringr)
+fasta <- readDNAStringSet("OriginalFiles/zotus_nonchimeric.fa")
+removefromfasta<-c("centroid=otu50237;seqs=1;size=53","centroid=otu52917;seqs=1;size=48", "centroid=otu55415;seqs=1;size=44")
+fasta<-fasta[!names(fasta) %in% removefromfasta]
+rm(removefromfasta)
+
+tax_table<-read.csv("AssignTaxonomy/Silva138_assignedTaxonomy_toSpecies_temp1_28Apr2023.csv", header=T)
+colnames(tax_table)[1]<-"seq"
+ESVseq<-data.frame(seq=as.character(fasta), names=names(fasta))
+ESVseq$ESV<-str_split(ESVseq$names,pattern = ";", 3, simplify = T)[,1]
+ESVseq$names<-NULL
+
+tax_table<-merge(tax_table,ESVseq, by="seq")
+tax_table$seq<-NULL
+rownames(tax_table)<-tax_table$ESV
+tax_table$ESV<-NULL
+#write.csv(tax_table,"AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv")
+```
+Put these into an "AssignTaxonomy" folder and then the final one in the "FinalTaxFile"
+
+# Part 2: Data Cleaning
+
+## 1. Remove unassigned and eukaryotic ESVs
+
+### a. Read in taxonomy table
+```{r}
+tax_tab<-read.csv("AssignTaxonomy/FinalTaxFile/Silva138_assignedTaxonomy_toSpecies_2May2023.csv", header=T,row.names=1)
+table(tax_tab$Kingdom) # showing NO Eukaryotes
+unique(tax_tab$Kingdom) # when the cell is empty there is an NA
+```
+
+### b. Remove unassigned kingdom, and taxa assigned to chloroplast, and mitochondria 
+```{r}
+# count unassigned taxa at the kingdom level (column 1)
+table(is.na(tax_tab[,1]))
+#  FALSE   TRUE 
+# 123794    111 
+
+tax_tab<-tax_tab[-which(is.na(tax_tab$Kingdom)),] # remove unassigned kingdom
+
+table(tax_tab[,]=="Chloroplast")
+#  FALSE   TRUE 
+# 504979   1013
+
+table(tax_tab$Kingdom=="Chloroplast")
+table(tax_tab$Phylum=="Chloroplast")
+table(tax_tab$Class=="Chloroplast")
+table(tax_tab$Order=="Chloroplast") # only here
+table(tax_tab$Family=="Chloroplast")
+table(tax_tab$Genus=="Chloroplast")
+table(tax_tab$Species=="Chloroplast")
+
+tax_tab<-tax_tab[-which(tax_tab$Order=="Chloroplast"),] # remove chloroplasts
+
+nrow(tax_tab)== (123794 - 1013) 
+#new number of taxa should be 122781
+
+table(tax_tab[,]=="Mitochondria")
+#  FALSE   TRUE 
+# 500873   1067 
+
+table(tax_tab$Kingdom=="Mitochondria")
+table(tax_tab$Phylum=="Mitochondria")
+table(tax_tab$Class=="Mitochondria")
+table(tax_tab$Order=="Mitochondria") 
+table(tax_tab$Family=="Mitochondria") #only here
+table(tax_tab$Genus=="Mitochondria")
+table(tax_tab$Species=="Mitochondria")
+
+tax_tab<-tax_tab[-which(tax_tab$Family=="Mitochondria"),]
+
+nrow(tax_tab)== (122781 - 1067)
+#new number of taxa should be 121714
+```
+
+### @count_track (taxa)
+```{r}
+nrow(tax_tab)
+Sys.Date()
+# [1] 121714
+# [1] "2024-01-19"
+```
+
+
+## 2. Read in ESV table
+```{r}
+esv_table<-read.delim("OriginalFiles/otutable.esv", header = TRUE, stringsAsFactors = FALSE, quote = "", sep = "\t")
+#change the ESV name to be a row name
+rownames(esv_table)<-esv_table$OTUID
+esv_table$OTUID<-NULL
+
+# check that there are no NAs in the table
+table(is.na(esv_table[,]))
+Sys.Date()
+#     FALSE 
+# 161770302 
+# [1] "2024-01-19"
+```
+
+### a. Remove samples not intended for this study
+
+1.  remove all water samples that are not included in this study
+2.  remove samples that should not have been included in this study
+3.  remove any ESVs without reads
+
+```{r}
+ESV_names<-unique(names(esv_table))
+
+water<-c("H24blank",
+"H3BL00_3",
+"H59BL01_1",
+"H6BL01_3",
+"H64BL00_1",
+"H66BL00_2",
+"H67BL07_2",
+"H7BL01_3",
+"H70BL10_2",
+"H72BL10_1",
+"H73BL07_1",
+"H74BL01_2",
+"H9BL10_3",
+"H29CL00_1",
+"H31CL01_2",
+"H34CL01_1",
+"H35CL07_3",
+"H36CL07_2",
+"H43CL00_3",
+"H46CL16_1",
+"H48CL00_2",
+"H51CL16_3",
+"H55CL16_2",
+"H61CL01_3",
+"H65CL07_1",
+"H11EG03_3",
+"H12EG01_2",
+"H13EG00_1",
+"H14EG06_2",
+"H15EG00_3",
+"H16EG01_3",
+"H17EG01_1",
+"H18EG03_2",
+"H19EG06_3",
+"H20EG00_2",
+"H21EG03_1",
+"H22EG06_1",
+"H5HL00_1",
+"H10HW00_1",
+"H4LW00_1",
+"H68LL00_2",
+"H38LO08_3",
+"H39LO08_1",
+"H40LO01_3",
+"H44LO08_2",
+"H45LO01_3",
+"H50LO05_1",
+"H52LO00_3",
+"H53LO05_3",
+"H54LO05_2",
+"H56LO00_1",
+"H57LO01_1",
+"H69LO00_2",
+"H2LS00_1",
+"H58ML00_2",
+"H1RL00_1",
+"H25SV06_3",
+"H28SV04_2",
+"H30SV01_3",
+"H32SV00_1",
+"H33SV04_1",
+"H41SV04_3",
+"H47SV00_3",
+"H49SV01_1",
+"H60SV01_2",
+"H62SV06_1",
+"H63SV00_2",
+"H71SV06_2",
+"H26SR00_1",
+"H23SG10_1",
+"H27SG00_1",
+"H37SG01_1",
+"H42SG15_1")
+
+remv<-c("LWL0104L",
+"LWL100L",
+"LW0100",
+"LL0404L",
+"RL0100L2",
+"RL0104L",
+"SV0100L",
+"SV0104L",
+"SM0100L",
+"SM0104L",
+"TL0100L2",
+"TL0104L")
+
+remove<-c(remv,water)
+rm(remv)
+rm(water)
+positions_remove<-NULL
+for(i in 1:length(remove)){
+   positions_remove<-c(positions_remove, grep(remove[i], ESV_names))    
+}
+
+#check that only the samples you want are removed, (i.e. not LW0100L on accident)
+remove_df<-esv_table[,positions_remove]
+samp_names_rm<-str_split(names(remove_df),pattern = "_", 4, simplify = T)[,4]
+keep<-grep(setdiff(samp_names_rm,remove), ESV_names)  #only one sample (LW0100L) that is in the removed list that shouldn't be!
+positions_remove_new<-positions_remove[!positions_remove%in%keep]
+table(positions_remove_new%in%keep) # all FALSE
+table(positions_remove_new%in%positions_remove) # all TRUE
+
+
+positions_remove<-positions_remove_new
+rm(remove_df)
+rm(samp_names_rm)
+rm(keep)
+rm(positions_remove_new)
+
+
+#overwrite esv_table with columns (samples) removed
+esv_table_backup<-esv_table #make backup
+esv_table[,positions_remove]<-list(NULL)
+
+#check this worked
+ESV_names<-unique(names(esv_table))
+positions_remove<-NULL
+i=1
+for(i in 1:length(remove)){
+   positions_remove<-c(positions_remove, grep(remove[i], ESV_names))    
+}
+ESV_names[positions_remove]
+#only two left are the LW0100L samples which means it worked
+
+rm(ESV_names)
+rm(remove)
+rm(positions_remove)
+rm(i)
+rm(esv_table_backup) #delete backup
+
+
+#remove ESVs without reads
+reads_per_esv<-as.data.frame(rowSums(esv_table))
+names(reads_per_esv)<-"reads"
+reads_per_esv$esv<-rownames(reads_per_esv)
+rownames(reads_per_esv)<-NULL
+
+greaterthan0<-which(reads_per_esv$reads>0)
+esv_table_zero_rm<-esv_table[greaterthan0,]
+
+#check this visually (no taxa with 0)
+reads_per_esv<-as.data.frame(rowSums(esv_table_zero_rm))
+
+
+#overwrite esv table
+esv_table<-esv_table_zero_rm
+
+rm(esv_table_zero_rm)
+rm(reads_per_esv)
+rm(greaterthan0)
+```
+
+### @count_track (samples and blanks)
+
+So far we have:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- 11 blanks are included
+
+```{r}
+#starting number of reads in the ESV table including blanks
+sum(colSums(esv_table))
+Sys.Date()
+# [1] 45453337
+# [1] "2024-01-19"
+
+#average number of reads per sample + blanks before any further filtering
+sum(colSums(esv_table))/(length(esv_table)/2) #divided by two here because we have not summed technical replicates yet
+Sys.Date()
+# [1] 80306.25
+# [1] "2024-01-19"
+
+#number of ESVS
+nrow(esv_table) 
+Sys.Date()
+# [1] 122444 
+# [1] "2024-01-19"
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_2a.Rdata"))
+```
+
+### @count_track (blanks)
+
+These are the number of reads in each blank sample after:
+- removed ESVs without reads in the ESV table
+
+```{r}
+blanks<- c()
+for (i in 1:ncol(esv_table)){
+       if(length(grep("Blank", colnames(esv_table)[i], value = T))>0){
+                blanks<- append(blanks, i)
+        }}
+rm(i)
+
+# subset blanks from esv_table & calculate reads
+blank_data<-esv_table[, blanks]
+blank_reads<-as.data.frame(colSums(blank_data))
+names(blank_reads)<-"reads"
+blank_reads$sample<-rownames(blank_reads)
+rownames(blank_reads)<-NULL
+blank_reads
+
+Sys.Date()
+# number of total reads
+sum(colSums(blank_data))
+
+# number of blanks
+length(blank_data)
+
+# summary of blank reads
+summary(blank_reads$reads)
+
+# number of ESVs in the 11 blank samples
+tmp<-as.data.frame(rowSums(blank_data))
+tmp<-tmp[tmp$`rowSums(blank_data)`>0,]
+length(tmp)
+
+# [1] "2024-01-19"
+# [1] 45720
+# [1] 22
+#     Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+#    26.00    36.75    48.50  2078.18   106.75 30828.00 
+# [1] 8950
+
+rm(blank_reads)
+rm(blank_data)
+
+```
+   reads                                  sample
+1     35   rna16S_AGGTAACCAA_CTGGATGAA_JC_Blank3
+2  30828     rna16S_ATGGATAA_ATTCTGGAA_JC_Blank2
+3     30    rna16S_CAGCAGAA_AGCATGCTCA_JC_Blank1
+4     29 rna16S_CGTCAGCCAA_AGCATGCTCA_JC7_Blank7
+5     47 rna16S_CGTCAGCCAA_TATTCTATCA_JC7_Blank6
+6     42   rna16S_CTCAGCAA_CATAATTGCA_JC7_Blank4
+7     50   rna16S_CTCAGCAA_TTGGACGGCA_JC7_Blank3
+8     26   rna16S_GAGCCGCAA_GGTTAACCA_JC7_Blank1
+9    116       rna16S_GGCGCCGAA_GTAACCTAA_Blank3
+10   196   rna16S_GGTACTCAA_AGACGACCA_JC7_Blank2
+11   222  rna16S_GGTACTCAA_TTGGACGGCA_JC7_Blank3
+12    43 rna16S_GTATAGCCAA_AGCATGCTCA_JC7_Blank7
+13    30    rna16S_GTCTCGAA_AGCATGCTCA_JC_Blank1
+14    79  rna16S_GTTGGCCAA_CAATTAATCA_JC7_Blank5
+15    51  rna16S_GTTGGCCAA_CATAATTGCA_JC7_Blank4
+16    59   rna16S_TACTTGCAA_AGACGACCA_JC7_Blank2
+17    43   rna16S_TACTTGCAA_GGTTAACCA_JC7_Blank1
+18   122       rna16S_TAGAACGAA_GTAACCTAA_Blank3
+19    47  rna16S_TCTCTCCAA_CAATTAATCA_JC7_Blank5
+20    58  rna16S_TCTCTCCAA_TATTCTATCA_JC7_Blank6
+21 13537     rna16S_TTACCTAA_ATTCTGGAA_JC_Blank2
+22    30     rna16S_TTACCTAA_CTGGATGAA_JC_Blank3
+
+
+### @count_track (samples)
+
+So far we have:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- excluded 11 blanks
+
+```{r}
+# remove blanks from esv_table
+esv_table_no_blanks<-esv_table[, -blanks]
+
+Sys.Date()
+# total reads
+sum(colSums(esv_table_no_blanks))
+
+#average number of reads per sample
+sum(colSums(esv_table_no_blanks))/(length(esv_table_no_blanks)/2)
+
+#number of ESVs with ESVs with zero reads removed 
+tmp<-as.data.frame(rowSums(esv_table_no_blanks))
+tmp<-tmp[tmp$`rowSums(esv_table_no_blanks)`>0,]
+length(tmp)
+rm(tmp)
+
+# number of samples
+ncol(esv_table_no_blanks)
+
+# [1] "2024-01-19"
+# [1] 45407617
+# [1] 81815.53
+# [1] 122443
+# [1] FALSE
+# [1] 1110
+
+rm(blanks)
+rm(esv_table_no_blanks)
+```
+
+### b. Remove ESVs that were removed from the taxonomy table
+
+esv_table and tax_tab have a different number of ESVs because we deleted ESVs in the taxonomy table by removing chloroplast, mitochondria, and kingdom == NA
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_2a.Rdata")
+
+keep<-rownames(tax_tab)
+esvs<-rownames(esv_table)
+removefromesvtab<-setdiff(esvs,keep)
+table(esvs%in%keep)
+ # FALSE   TRUE 
+ #  1938 120506 
+table(row.names(esv_table) %in% removefromesvtab)
+Sys.Date()
+#  FALSE   TRUE 
+# 120506   1938 
+# [1] "2024-01-19"
+#removing 1938 ESVs from the ESV table 
+
+esv_table2<-esv_table[!(row.names(esv_table) %in% removefromesvtab),]
+#overwrite ESV table
+esv_table<-esv_table2
+
+rm(keep)
+rm(esvs)
+rm(removefromesvtab)
+rm(esv_table2)
+```
+
+### @count_track (samples and blanks)
+
+So far we have:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- 11 blanks are included
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+
+```{r}
+Sys.Date()
+#total number of reads
+sum(colSums(esv_table))
+
+#number of ESVS
+nrow(esv_table)
+
+#avg. number of reads per sample
+sum(colSums(esv_table))/(length(esv_table)/2) #divided by two because we still haven't summed technical replicates
+
+#number of technically replicated samples with blanks included
+ncol(esv_table)
+
+
+# [1] "2024-01-19"
+# [1] 43346162
+# [1] 120506
+# [1] 76583.33
+# [1] 1132
+```
+
+### @count_track (blanks)
+
+These are the number of reads in each blank sample after:
+- removed ESVs without reads in the ESV table
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+
+```{r}
+blanks<- c()
+for (i in 1:ncol(esv_table)){
+       if(length(grep("Blank", colnames(esv_table)[i], value = T))>0){
+                blanks<- append(blanks, i)
+        }}
+rm(i)
+
+# subset blanks from esv_table & calculate reads
+blank_data<-esv_table[, blanks]
+blank_reads<-as.data.frame(colSums(blank_data))
+names(blank_reads)<-"reads"
+blank_reads$sample<-rownames(blank_reads)
+rownames(blank_reads)<-NULL
+blank_reads
+
+Sys.Date()
+# number of total reads
+sum(colSums(blank_data))
+
+# number of blanks
+length(blank_data)
+
+# [1] "2024-01-19"
+# [1] 42948
+# [1] 22
+
+rm(blank_reads)
+rm(blanks)
+rm(blank_data)
+```
+   reads                                  sample
+1      4   rna16S_AGGTAACCAA_CTGGATGAA_JC_Blank3
+2  29682     rna16S_ATGGATAA_ATTCTGGAA_JC_Blank2
+3      2    rna16S_CAGCAGAA_AGCATGCTCA_JC_Blank1
+4      1 rna16S_CGTCAGCCAA_AGCATGCTCA_JC7_Blank7
+5      2 rna16S_CGTCAGCCAA_TATTCTATCA_JC7_Blank6
+6      3   rna16S_CTCAGCAA_CATAATTGCA_JC7_Blank4
+7      4   rna16S_CTCAGCAA_TTGGACGGCA_JC7_Blank3
+8      0   rna16S_GAGCCGCAA_GGTTAACCA_JC7_Blank1
+9     48       rna16S_GGCGCCGAA_GTAACCTAA_Blank3
+10   134   rna16S_GGTACTCAA_AGACGACCA_JC7_Blank2
+11     5  rna16S_GGTACTCAA_TTGGACGGCA_JC7_Blank3
+12     7 rna16S_GTATAGCCAA_AGCATGCTCA_JC7_Blank7
+13     2    rna16S_GTCTCGAA_AGCATGCTCA_JC_Blank1
+14     2  rna16S_GTTGGCCAA_CAATTAATCA_JC7_Blank5
+15     4  rna16S_GTTGGCCAA_CATAATTGCA_JC7_Blank4
+16     3   rna16S_TACTTGCAA_AGACGACCA_JC7_Blank2
+17    13   rna16S_TACTTGCAA_GGTTAACCA_JC7_Blank1
+18    46       rna16S_TAGAACGAA_GTAACCTAA_Blank3
+19     1  rna16S_TCTCTCCAA_CAATTAATCA_JC7_Blank5
+20     6  rna16S_TCTCTCCAA_TATTCTATCA_JC7_Blank6
+21 12976     rna16S_TTACCTAA_ATTCTGGAA_JC_Blank2
+22     3     rna16S_TTACCTAA_CTGGATGAA_JC_Blank3
+
+Save temporary workspace image
+```{r}
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_2b.Rdata"))
+```
+
+
+## 3. Sum technical replicates
+
+### a. Test for correlation between technical replicates
+
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_2b.Rdata")
+
+esv_tab_derep <- esv_table
+
+# pull out the sample name from longer sample ID string
+# split by "_" 4 times and save the forth column with the sample name
+samp_names<-str_split(names(esv_tab_derep),pattern = "_", 4, simplify = T)[,4]
+Sys.Date()
+length(unique(samp_names))
+# [1] "2024-01-19"
+# [1] 566
+
+names(esv_tab_derep)<-samp_names
+
+
+cor_df<-list()
+for(i in 1:length(samp_names)){
+        for(j in 1:length(samp_names)){
+                if(samp_names[i] == samp_names[j] & i!=j & i>j){
+                        tmp<-cbind(esv_tab_derep[i], esv_tab_derep[j])
+                        cor_stat <-data.frame(cor(tmp[1], tmp[2])) 
+                        cor_df<-c(cor_df, cor_stat)
+                }
+        }
+}
+
+# unlist to a dataframe containing sample ID and the correlation among technical replicates.
+cor_df <- data.frame(SampleID = rep(names(cor_df), sapply(cor_df, length)), correlation = unlist(cor_df))
+
+# Look at samples less than 70% correlated        
+low_cor_samp<-cor_df[cor_df$correlation<0.7,]
+nrow(low_cor_samp)
+#[1] 76 - [1] "2024-01-19" but this is 75 since one row is NA
+
+rm(tmp)
+rm(cor_df)
+rm(cor_stat)
+#rm(low_cor_samp)
+rm(i)
+rm(j)
+rm(esv_tab_derep)
+
+write.csv(low_cor_samp,paste0("DataCleaning/",Sys.Date(),"_Technical_Rep_Correlation.csv"))
+```
+
+### b. Assess read numbers of technical replicates with low correlations
+```{r}
+tmp <- esv_table
+
+samp_names2<-str_split(names(tmp),pattern = "_", 4, simplify = T)[,4]
+
+reads<-as.data.frame(colSums(tmp))
+names(reads)<-"reads"
+reads$sample<-rownames(reads)
+rownames(reads)<-NULL
+reads$samp_name<-str_split(reads$sample,pattern = "_", 4, simplify = T)[,4]
+
+xremoved<-str_remove(low_cor_samp$SampleID, "[X]")
+
+
+select<-which(reads$samp_name%in%xremoved)
+cor70<-reads[select,]
+
+write.csv(cor70,paste0("DataCleaning/",Sys.Date(),"_Reads_With_Low_Tech_Rep_Correlation.csv"))
+
+rm(reads)
+rm(tmp)
+rm(cor70)
+rm(select)
+rm(xremoved)
+rm(samp_names2)
+rm(low_cor_samp)
+rm(samp_names)
+```
+
+For technical replicates that were correlated less than 70%, I kept samples if the technical replicate with the smaller number of reads was less than 25% of the total reads in the larger technical replicate. If samples that were less than 70% correlated and the technical replicate with the smaller number of reads was over 25% of the technical replicate, I retained the sample if the total reads between both technical replicates was less than 2000. Technical replicates in the samples explained in the last sentence are likely uncorrelated because of the overall low number of reads. These samples end up getting filtered out during the normaliing step where we remove samples with less than 10,000 reads in Step 7. 
+
+
+
+### c. Sum technical replicates
+
+```{r}
+esv_tab_derep <- esv_table
+
+samp_names<-str_split(names(esv_tab_derep),pattern = "_", 4, simplify = T)[,4]
+
+# starting number of unique samples
+Sys.Date()
+length(unique(samp_names))
+# [1] "2024-01-19"
+# [1] 566
+
+# rename columns in esv_tab_derep with the extracted info in samp_names
+names(esv_tab_derep)<-samp_names
+table(names(esv_tab_derep)==str_split(names(esv_table),pattern = "_", 4, simplify = T)[,4]) # all TRUE
+summed_esv_table <- rowsum(t(esv_tab_derep), group = colnames(esv_tab_derep), na.rm = T)
+summed_esv_table<-as.data.frame(t(summed_esv_table))
+
+# check this worked
+original<-esv_table
+names(original)<-samp_names
+original<-original[,order(names(original))]
+
+original[1:10,1:5]
+summed_esv_table[1:10,1:6]
+
+# remove extra dataframes
+rm(original)
+rm(samp_names)
+rm(esv_tab_derep)
+
+# midway count track
+sum(colSums(summed_esv_table))
+# [1] 43346162
+
+# remove a sample with correlation <70 %, small technical replicate reads >25% of technical replicate reads (49318 and 53820 reads, respectively), and total reads of the two technical replicates >2000.
+remove<-c("LS0120L")
+
+where<-which(names(summed_esv_table) %in% remove)
+table(names(summed_esv_table)[where] %in% remove) # only 1 should be TRUE 
+summed_esv_table_goodcorronly<-summed_esv_table[,-where]
+table(names(summed_esv_table_goodcorronly)%in% remove) #all FALSE
+
+# rewrite esv_table
+esv_table<-summed_esv_table_goodcorronly
+
+# second midway count track 
+sum(colSums(esv_table))
+#[1] 43243024 - this is correct, matches the one sample we removed with tech rep #1 53820 + tech rep #2 49318 = 103138 reads 
+
+
+# check for ESVs with zeros reads again
+reads_per_esv<-as.data.frame(rowSums(esv_table))
+names(reads_per_esv)<-"reads"
+reads_per_esv$esv<-rownames(reads_per_esv)
+rownames(reads_per_esv)<-NULL
+
+lessthan1<-which(reads_per_esv$reads<1)
+#no ESVs less than 1 (integer (empty)) - 16 Jan 2024
+
+
+rm(lessthan1)
+rm(reads_per_esv)
+rm(where)
+rm(summed_esv_table_goodcorronly)
+rm(remove)
+rm(summed_esv_table)
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_3a.Rdata"))
+```
+ 
+### @count_track (samples and blanks)
+
+So far we have:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- 11 blanks are included
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- summed technical replicates and removed one sample that was uncorrelated with high reads
+
+```{r}
+Sys.Date()
+# total number of reads
+sum(colSums(esv_table))
+
+# number of ESVS
+nrow(esv_table)
+
+# avg number of reads per sample
+sum(colSums(esv_table))/(length(esv_table))
+
+# number of samples including blanks
+ncol(esv_table)
+
+# [1] "2024-01-19"
+# [1] 43243024
+# [1] 120506
+# [1] 76536.33
+# [1] 565
+```
+
+
+
+### @count_track (blanks)
+
+These are the number of reads in each blank sample after:
+- removed ESVs without reads in the ESV table
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- technical replicates summed 
+
+```{r}
+blanks<- c()
+for (i in 1:ncol(esv_table)){
+       if(length(grep("Blank", colnames(esv_table)[i], value = T))>0){
+                blanks<- append(blanks, i)
+        }}
+rm(i)
+
+# subset blanks from esv_table & calculate reads
+blank_data<-esv_table[, blanks]
+blank_reads<-as.data.frame(colSums(blank_data))
+names(blank_reads)<-"reads"
+blank_reads$sample<-rownames(blank_reads)
+rownames(blank_reads)<-NULL
+blank_reads
+
+Sys.Date()
+# number of total reads
+sum(colSums(blank_data))
+
+# number of blanks
+length(blank_data)
+
+# summary of blank reads
+summary(blank_reads$reads)
+
+# number of ESVs in the 11 blank samples
+tmp<-as.data.frame(rowSums(blank_data))
+tmp<-tmp[tmp$`rowSums(blank_data)`>0,]
+length(tmp)
+
+# [1] "2024-01-19"
+# [1] 42948
+# [1] 11
+#    Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#     3.0     7.0     8.0  3904.4    53.5 42658.0 
+# [1] 8871
+
+rm(blank_reads)
+rm(blank_data)
+
+```
+   reads     sample
+1     94     Blank3
+2      4  JC_Blank1
+3  42658  JC_Blank2
+4      7  JC_Blank3
+5     13 JC7_Blank1
+6    137 JC7_Blank2
+7      9 JC7_Blank3
+8      7 JC7_Blank4
+9      3 JC7_Blank5
+10     8 JC7_Blank6
+11     8 JC7_Blank7
+
+### @count_track (samples)
+
+So far we have:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- excluded 11 blanks
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- summed technical replicates and removed one sample that was uncorrelated with high reads
+
+```{r}
+# remove blanks from esv_table
+esv_table_no_blanks<-esv_table[, -blanks]
+
+Sys.Date()
+# total reads
+sum(colSums(esv_table_no_blanks))
+
+#average number of reads per sample
+sum(colSums(esv_table_no_blanks))/length(esv_table_no_blanks)
+
+#number of ESVs with ESVs with zero reads removed 
+tmp<-as.data.frame(rowSums(esv_table_no_blanks))
+tmp<-tmp[tmp$`rowSums(esv_table_no_blanks)`>0,]
+length(tmp)
+
+# same number as:
+length(tmp)==nrow(esv_table_no_blanks) # all TRUE
+
+rm(tmp)
+
+# number of samples
+ncol(esv_table_no_blanks)
+
+# [1] "2024-01-19"
+# [1] 43200076
+# [1] 77978.48
+# [1] 120506
+# [1] TRUE
+# [1] 554
+
+rm(blanks)
+rm(esv_table_no_blanks)
+```
+
+
+## 4. Decontaminate samples
+
+Identify contaminants using the "decontam" package and the prevalence function
+
+Reference: Davis, N. M., Proctor, D. M., Holmes, S. P., Relman, D. A., & Callahan, B. J. (2018). Simple statistical identification and removal of contaminant sequences in marker-gene and metagenomics data. Microbiome, 6, 1-14.
+
+### a. Set up input files and create phyloseq object
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_3a.Rdata")
+
+#make simple metadata table saying which samples are blanks verses true samples
+meta_dat<-data.frame(sample_name=colnames(esv_table),Sample_or_Control=rep("True Sample", ncol(esv_table)))
+
+blanks<- c()
+for (i in 1:ncol(esv_table)){
+       if(length(grep("Blank", colnames(esv_table)[i], value = T))>0){
+                blanks<- append(blanks, i)
+        }}
+rm(i)
+
+meta_dat[blanks,2]<-"Control Sample" # specificy which ones are controls
+rownames(meta_dat)<-meta_dat$sample_name
+rm(blanks)
+
+# create objects to input into phyloseq
+tax_tab <-as.matrix(tax_tab)
+taxa_tab <- tax_table(tax_tab)
+
+# make sure there there are no blanks in the taxonomy table
+table(taxa_tab@.Data=="") # all false
+
+#convert metadata and ESV table to phyloseq sub-objects
+samp_dat <- sample_data(meta_dat)
+esv_tab <- otu_table(esv_table, taxa_are_rows = T)
+```
+
+### b. Identify contaminants
+```{r}
+ps <- phyloseq(esv_tab, samp_dat, taxa_tab)
+sample_data(ps)$is.neg <- sample_data(ps)$Sample_or_Control == "Control Sample"
+contamdf.prev <- isContaminant(ps, method="prevalence", neg="is.neg")
+
+table(contamdf.prev$contaminant)
+# FALSE   TRUE 
+# 119644    862 - 19-Jan-2024
+# 862 ESVs that are considered contaminants
+
+#what proportion of the total reads are the contaminants?
+contamdf.prev$esv<-rownames(contamdf.prev)
+contaminants<-contamdf.prev[which(contamdf.prev$contaminant==TRUE),]$esv
+
+# what how many reads of these contaminants are in the sample dataset?
+sum(colSums(esv_table[rownames(esv_table)%in%contaminants,]))
+# 17900 reads - 19-Jan-2024
+sum(colSums(esv_table[rownames(esv_table)%in%contaminants,]))/sum(colSums(esv_table))
+# [1] 0.0004139396 # proportion of the total reads will be removed
+
+
+
+rm(meta_dat)
+rm(ps)
+rm(esv_tab)
+rm(taxa_tab)
+rm(samp_dat)
+
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_4b.Rdata"))
+
+
+```
+
+### c. Remove contaminants and blanks
+
+Here I will remove 862 contaminants found, which represents 0.0004% of the total reads in our dataset (calculations above)
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_4b.Rdata")
+
+# remove contaminants
+contamdf.prev$esv<-rownames(contamdf.prev)
+contaminants<-contamdf.prev[which(contamdf.prev$contaminant==TRUE),]$esv
+
+esv_table<-esv_table[!rownames(esv_table)%in% contaminants,]
+
+
+blanks<- c()
+for (i in 1:ncol(esv_table)){
+       if(length(grep("Blank", colnames(esv_table)[i], value = T))>0){
+                blanks<- append(blanks, i)
+        }}
+rm(i)
+
+esv_table<-esv_table[, -blanks]
+
+rm(blanks)
+rm(contaminants)
+rm(contamdf.prev)
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_4c.Rdata"))
+```
+
+### @count_track (samples)
+
+Here I:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- summed technical replicates and removed one sample that was uncorrelated with high reads
+- removed contaminant ESVs
+- removed the 11 blanks
+
+```{r}
+Sys.Date()
+# total number of reads
+sum(colSums(esv_table))
+
+# number of ESVS
+nrow(esv_table)
+
+#avg. number of reads per sample
+sum(colSums(esv_table))/(length(esv_table))
+
+# number of samples, blanks excluded
+ncol(esv_table)
+
+# [1] "2024-01-19"
+# [1] 43184273
+# [1] 119644
+# [1] 77949.95
+# [1] 554
+```
+
+## 5. Remove ESVs with low reads
+
+### a. Plot esvs per read count
+
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_4c.Rdata")
+
+# calculate number of reads
+reads_per_esv<-as.data.frame(rowSums(esv_table))
+names(reads_per_esv)<-"reads"
+reads_per_esv$esv<-rownames(reads_per_esv)
+rownames(reads_per_esv)<-NULL
+
+# make a table to see the counts of each esv
+table_no.out_per.read<-as.data.frame(table(reads_per_esv$reads))
+table_no.out_per.read$Var1<-as.numeric(as.character(table_no.out_per.read$Var1))
+colnames(table_no.out_per.read)<-c("reads","no.esvs")
+
+#plot all to see that this is just happening within the first 100 reads
+
+pdf(paste0("DataCleaning/",Sys.Date(),"_Number_ESVs_Per_Read_Count.pdf"))
+plot(table_no.out_per.read$reads,table_no.out_per.read$no.esvs,main="Number of ESVs per read count", xlab="Total reads", ylab="Number of ESVs")
+dev.off()
+
+#plot the subset of 0-20 reads
+pdf(paste0("DataCleaning/",Sys.Date(),"_Number_ESVs_Per_Read_Count_To100.pdf"))
+
+plot(table_no.out_per.read$reads[1:100],table_no.out_per.read$no.esvs[1:100],main="Number of ESVs per read count", xlab="Total reads", ylab="Number of ESVs")
+dev.off()
+
+
+rm(table_no.out_per.read)
+rm(reads_per_esv)
+```
+
+After viewing figures, I decided to remove ESVs with less than 10 reads, the following paper did the same: 
+Urrutia-Cordero, P., Langenheder, S., Striebel, M., Eklöv, P., Angeler, D. G., Bertilsson, S., ... Hillebrand, H. (2021). Functionally reversible impacts of disturbances on lake food webs linked to spatial and seasonal dependencies. Ecology, 102(4). https://doi.org/10.1002/ecy.3283
+
+### b. Remove ESVs with less than 10 reads
+
+```{r}
+reads_per_esv<-as.data.frame(rowSums(esv_table))
+names(reads_per_esv)<-"reads"
+reads_per_esv$esv<-rownames(reads_per_esv)
+rownames(reads_per_esv)<-NULL
+
+lessthan10<-which(reads_per_esv$reads<10)
+esv_table_lessthan10removed<-esv_table[lessthan10,]
+sum(colSums(esv_table_lessthan10removed))
+nrow(esv_table_lessthan10removed)
+Sys.Date()
+# [1] "2024-01-19"
+# [1] 135595 # reads removed
+# [1] 18320 # ESVs removed
+
+esv_table<-esv_table[-lessthan10,]
+
+rm(lessthan10)
+rm(esv_table_lessthan10removed)
+rm(reads_per_esv)
+```
+
+### @count_track (samples)
+
+Here I:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- summed technical replicates and removed one sample that was uncorrelated with high reads
+- removed contaminant ESVs
+- removed the 11 blanks
+- removed ESVs with less than 10 reads across all samples
+
+```{r}
+Sys.Date()
+# total number of reads
+sum(colSums(esv_table))
+
+# number of ESVS
+nrow(esv_table)
+
+#avg. number of reads per sample
+sum(colSums(esv_table))/(length(esv_table))
+
+# number of samples, blanks excluded
+ncol(esv_table)
+
+# [1] "2024-01-19"
+# [1] 43048678
+# [1] 101324
+# [1] 77705.19
+# [1] 554
+```
+
+### c. Plot reads by ESVs for each sample
+
+```{r}
+#calculate number of reads per sample
+reads<-as.data.frame(colSums(esv_table))
+names(reads)<-"reads"
+
+#calculate number of esvs per sample
+samples<-names(esv_table)
+table(rownames(reads)==samples) # all TRUE
+
+ESVs<-NULL
+for(i in 1:ncol(esv_table)){
+        tmp<-as.data.frame(esv_table[,i])
+        tmp2<-tmp[tmp>0,]
+        ESVs<-c(ESVs, length(tmp2))
+}
+rm(i)
+rm(tmp)
+rm(tmp2)
+rm(samples)
+
+
+tmp3<-as.data.frame(cbind(reads$reads,ESVs))
+names(tmp3)<-c("reads3","esvs3")
+tmp3$sample<-rownames(reads)
+
+
+pdf(paste0("DataCleaning/",Sys.Date(),"_Reads_ESVs_BySample.pdf"))
+plot(ESVs,reads$reads, main="Number of total reads and ESVs for each sample", ylab="Total reads", xlab="Number of ESVs")
+dev.off()
+
+
+rm(ESVs)
+rm(reads)
+rm(tmp3)
+
+```
+
+This figure suggest that I should normalize because the number of ESVs increases with then number of reads in a sample (rather than having equally distributed points with no positive relationship)
+
+
+## 7. Write ESV and taxa CSVs before normalization
+
+```{r}
+write.csv(esv_table,file=paste0("DataCleaning/",Sys.Date(),"_ESV_table_notnorm.csv",row.names = T))
+write.csv(tax_tab,file=paste0("DataCleaning/",Sys.Date(),"_tax_tab_notnorm.csv",row.names = T))
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_7.Rdata"))
+```
+
+## 8. Normalize
+
+### a. Remove samples with less than 10,000 reads
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_7.Rdata")
+
+esv_to_normalize<-esv_table
+num_read<-as.data.frame(colSums(esv_to_normalize))
+names(num_read)<-"reads"
+num_read$sample<-rownames(num_read)
+rownames(num_read)<-NULL
+
+belowthreshold<-which(num_read$reads<10000)
+length(belowthreshold)
+# 76 samples below 10,000 reads - 19-Jan-2024 
+
+# look at how many samples would be removed if the threshold is 5000
+belowthreshold5000<-which(num_read$reads<5000)
+length(belowthreshold5000)
+# this is 72, very close to 76, so I will use 10,000 reads as the cutoff
+rm(belowthreshold5000)
+
+esv_to_normalize_10k<-esv_to_normalize[,-belowthreshold]
+ncol(esv_to_normalize_10k)
+# 478 samples remaining - 19-Jan-2024
+
+# check the columns were removed visually
+remove<-num_read[belowthreshold,] # all of these are between 100 and 10,000
+num_read_esv_to_normalize_10000<-as.data.frame(colSums(esv_to_normalize_10k)) # all over 10,000 reads
+
+rm(remove)
+rm(num_read_esv_to_normalize_10000)
+rm(belowthreshold)
+rm(num_read)
+
+# check if there are now ESVs with zero reads
+reads_per_esv<-as.data.frame(rowSums(esv_to_normalize_10k))
+names(reads_per_esv)<-"reads"
+reads_per_esv$esv<-rownames(reads_per_esv)
+rownames(reads_per_esv)<-NULL
+
+lessthan1<-which(reads_per_esv$reads<1)
+#no ESVs with reads less than 1 (integer)
+rm(lessthan1)
+rm(reads_per_esv)
+```
+
+### b. Normalize
+
+Notes on the rrarefy() function from the help page: Function rrarefy generates one randomly rarefied community data frame or vector of given sample size. The sample can be a vector giving the sample sizes for each row. If the sample size is equal to or smaller than the observed number of individuals, the non-rarefied community will be returned. The random rarefaction is made without replacement so that the variance of rarefied communities is rather related to rarefaction proportion than to the size of the sample. 
+
+```{r}
+S <- specnumber(esv_to_normalize_10k) 
+length(S)
+#[1] 101324 - observed number of species - 19-Jan-2024 # observed number of species
+(raremax <- min(rowSums(t(esv_to_normalize_10k)))) #minimum reads to normalize to (10291 - 19-Jan-2024)
+set.seed(061319)
+rrare<-rrarefy(t(esv_to_normalize_10k), sample = raremax)
+df<-as.data.frame(t(rrare))
+
+
+pdf(paste0("DataCleaning/",Sys.Date(),"_Rarefied_Data_10K_Reads.pdf"))
+plot(S, specnumber(t(rrare)), xlab = "Observed No. of Species", ylab = "Rarefied No. of Species")
+abline(0, 1)
+dev.off()
+
+
+num_read<-as.data.frame(colSums(df))
+names(num_read)<-"reads"
+num_read$sample<-rownames(num_read)
+rownames(num_read)<-NULL
+
+# count the number of species after rarefaction
+esv_counts<-as.data.frame(rowSums(df))
+names(esv_counts)<-"reads"
+esv_counts$ESV<-rownames(esv_counts)
+rownames(esv_counts)<-NULL
+zeroESV<-which(esv_counts$reads<1)
+length(zeroESV)
+# [1] 8479 - ESVS that are zero after rarefying - 19-Jan-2024 
+
+esv_tab_10knorm<-df[-zeroESV,]
+
+#check you removed ESVs with 0 reads.
+check1<-as.data.frame(rowSums(esv_tab_10knorm))
+
+rm(check1)
+rm(df)
+rm(num_read)
+rm(esv_counts)
+rm(esv_to_normalize)
+rm(raremax)
+rm(S)
+rm(zeroESV)
+rm(rrare)
+rm(esv_table)
+
+# keep the non-normalized ESV table that is cut off at 10k just in case
+write.csv(esv_to_normalize_10k, paste0("DataCleaning/",Sys.Date(),"_ESVs_to_normalize_10K_reads.csv"), row.names=T)
+write.csv(esv_tab_10knorm, paste0("DataCleaning/",Sys.Date(),"_ESV_tab_10K_reads_normalized.csv", row.names=T))
+rm(esv_to_normalize_10k)
+
+save.image(paste0("DataCleaning/",Sys.Date(),"_DataCleaning_TempFile_Part2_8.RData"))
+```
+
+### @ count_track (samples)
+
+For the normalized dataframe just created:
+- removed samples that should not be included in this study
+- removed ESVs without reads in the ESV table
+- removed ESVs assigned to chloroplast, mitochondria, and kingdom NA
+- summed technical replicates and removed one sample that was uncorrelated with high reads
+- removed contaminant ESVs
+- removed the 11 blanks
+- removed ESVs with less than 10 reads across all samples
+- normalized reads to ~10K reads
+
+```{r}
+Sys.Date()
+# total number of reads
+sum(colSums(esv_tab_10knorm))
+
+# number of ESVS
+nrow(esv_tab_10knorm)
+
+#avg. number of reads per sample
+sum(colSums(esv_tab_10knorm))/(length(esv_tab_10knorm)) # these are all what we rarefied to.
+
+# number of samples
+ncol(esv_tab_10knorm)
+
+#percent of samples removed from starting 555 samples
+1-(ncol(esv_tab_10knorm)/555) 
+
+#number of ESVs retained compared to the starting number of ESVs from count_track in Part 2, 2a
+nrow(esv_tab_10knorm)/122444
+
+
+# [1] "2024-01-19"
+# [1] 4919098
+# [1] 92845
+# [1] 10291
+# [1] 478
+# [1] 0.1387387
+# [1] 0.758265
+```
+
+# Part 3: Create Phyloseq
+
+```{r}
+load("DataCleaning/2024-01-19_DataCleaning_TempFile_Part2_8.RData")
+metadata<-read.csv("Metadata/metadata_29Aug2022.csv",header=T,row.names = 1)
+
+# change East Glacier mislabeled sample from EG0308L2 to EG0318
+names(esv_tab_10knorm)[which(names(esv_tab_10knorm)=="EG0308L2")]<-"EG0318L"
+
+# check that metadata and ESV names match 
+table(rownames(metadata)%in%names(esv_tab_10knorm)) # all TRUE
+
+# check all samples are only sediment samples
+table(metadata$sample_type)
+
+# make sure no empty cells in the taxonomy table (these should all be NAs with the Silva138.1 reference database formatted for assigning taxonomy with DADA2)
+table(tax_tab[,]=="")
+#  FALSE 
+# 496605- 16 Jan 2024
+
+#covert taxa table to phyloseq sub-object
+tax_tab <-as.matrix(tax_tab)
+taxa_tab <- tax_table(tax_tab)
+
+# make sure there are no emtpy cells again once turned into phyloseq sub-object
+table(taxa_tab@.Data=="") # all FALSE
+
+#convert metadata and esv table to phyloseq sub-objects
+samp_dat <- sample_data(metadata)
+esv_tab_norm <- otu_table(esv_tab_10knorm, taxa_are_rows = T)
+ps <- phyloseq(esv_tab_norm, samp_dat, taxa_tab)
+
+#remove phyloseq sub-objects and objects (taxonomy table and esv_table) now stored in the phyloseq object
+rm(samp_dat)
+rm(esv_tab_norm)
+rm(taxa_tab)
+rm(tax_tab)
+rm(esv_tab_10knorm)
+
+#transform sample data
+ps_tr <- transform_sample_counts(ps, function(x) x / sum(x))
+#save final phyloseq object
+save.image(paste0(Sys.Date(),"_VonEggers_WyLakeSedMicrobes_Phyloseq.RData"))
+  ```
