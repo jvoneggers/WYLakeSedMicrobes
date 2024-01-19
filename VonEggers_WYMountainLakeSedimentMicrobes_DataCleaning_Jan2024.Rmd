@@ -1,11 +1,14 @@
 ---
-title: "WY Lake Sediment Prokaryotic Community Analyses"
+title: "WY Lake Sediment Prokaryotic Community Data Cleaning"
 author: "Jordan Von Eggers"
-date: "17 Jan 2024"
+date: "2024-01-19"
 output: html_document
 editor_options: 
   chunk_output_type: inline
 ---
+
+This markdown file contains the code used by Genome Technologies Laboratory at UW to convert raw fastq files to OTU/ESV tables. The rest of this code is assigning taxonomy, and filtering/cleaning the taxonomy table and ESV table to be made into a final Phyloseq object for further data analysis in a seperate markdown file. If you have any questions, please contact me at jordanvoneggers@gmail.com.
+
 
 # Load packages
 ```{r}
