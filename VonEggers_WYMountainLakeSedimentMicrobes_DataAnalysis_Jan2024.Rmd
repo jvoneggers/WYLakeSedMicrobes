@@ -9,7 +9,6 @@ editor_options:
 
 # load packages
 ```{r}
-
 require(tidyverse)
 require(vegan)
 require(phyloseq)
@@ -30,34 +29,32 @@ require(patchwork)
 require(mgcv)
 require(Matrix)
 require(metagMisc)
-
-# require(phangorn)
-# require(msa)
-# require(geosphere)
-# require(Hmisc)
-# require(patchwork)
-# require(Matrix)
-# require(metagMisc)
-# require(ggplot2)
-# library(MetBrewer)
-# require(rioja)
-# require(mgcv)
-# require(parallelDist)
-# require(ape)
-# require(dplyr)
-# library(caret)
-# library(picante)
-
-# require(cluster)
-# require(stringr)
-# require(reshape2)
-# require(geosphere)
-# require(Hmisc)
-# require(patchwork)
-# require(Matrix)
-# require(vegan)
+sessionInfo()
 ```
+R version 4.2.1 (2022-06-23)
+Platform: x86_64-apple-darwin17.0 (64-bit)
+Running under: macOS Monterey 12.6.7
 
+Matrix products: default
+LAPACK: /Library/Frameworks/R.framework/Versions/4.2/Resources/lib/libRlapack.dylib
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+attached base packages:
+[1] stats4    stats     graphics  grDevices utils     datasets  methods   base     
+
+other attached packages:
+ [1] metagMisc_0.0.4     Matrix_1.5-4        mgcv_1.9-1          patchwork_1.2.0    
+ [5] Hmisc_5.1-1         geosphere_1.5-18    cluster_2.1.6       picante_1.8.2      
+ [9] nlme_3.1-164        caret_6.0-94        ape_5.7-1           Biostrings_2.66.0  
+[13] GenomeInfoDb_1.34.9 XVector_0.38.0      IRanges_2.32.0      S4Vectors_0.36.1   
+[17] BiocGenerics_0.44.0 rioja_1.0-6         reshape2_1.4.4      pivottabler_1.5.5  
+[21] colorspace_2.1-0    parallelDist_0.2.6  beepr_1.3           phyloseq_1.42.0    
+[25] vegan_2.6-4         lattice_0.22-5      permute_0.9-7       lubridate_1.9.3    
+[29] forcats_1.0.0       stringr_1.5.1       dplyr_1.1.4         purrr_1.0.2        
+[33] readr_2.1.5         tidyr_1.3.0         tibble_3.2.1        ggplot2_3.4.4      
+[37] tidyverse_2.0.0 
 
 # Part III: Data Analysis
 
