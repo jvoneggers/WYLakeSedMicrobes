@@ -27,9 +27,6 @@ vignettes/*.pdf
 # R Environment Variables
 .Renviron
 WYLakeSedMicrobes.Rproj
-otutable.esv
-silva_nr99_v138.1_wSpecies_train_set.fa.gz
-silva_nr99_v138.1_train_set.fa.gz
 AssignTaxonomy
 DataCleaning
 Figures
@@ -38,9 +35,7 @@ OriginalFiles
 .DS_Store
 2024-01-19_VonEggers_WyLakeSedMicrobes_Phyloseq.RData
 ScrapCode.Rmd
-2024-01-19_ESVs_with10ormorereads_forBeartooth.fasta
-2024-01-19_WyLakeMicrobes_PhyloseqEnv_forPhylogeneticTree_ESVs10PlusReads.RData
 VonEggers_WYMountainLakeSedimentMicrobes_DataAnalysis_Jan2024.Rmd
-2024-01-19_ESVs_with10ormorereads_PhylogeneticTree.nwk
 CommunityAssembly
 PhylogeneticSignal
+IntermediateAnalysisFiles
