@@ -1643,13 +1643,13 @@ write.csv(pairwise, paste0(Sys.Date(),"_iCAMP_qpen_10plusESVs_sediment_character
 plot all zones together
 
 ```{r}
-qpn<-read.csv("2024-01-22_iCAMP_qpen_10plusESVs_sediment_characteristics.csv", header=T, row.names=1)
+qpn<-read.csv("CommunityAssembly/2024-01-22_iCAMP_qpen_10plusESVs_sediment_characteristics.csv", header=T, row.names=1)
 
 # three toggle on/off with hash tags total in this chunk:
 
-#downcore<-qpn[is.na(qpn$abs_cm)==F & qpn$abs_cm<27 ,] # subset by samples within the same core (intra-core)
+downcore<-qpn[is.na(qpn$abs_cm)==F & qpn$abs_cm<27 ,] # subset by samples within the same core (intra-core)
 
-downcore<-qpn # samples that are comparable anywhere (from other lakes, inter-core)
+#downcore<-qpn # samples that are comparable anywhere (from other lakes, inter-core)
 
 downcore$d_val<-downcore$env_dist
 downcore$d_val_group_breaks<-cut2(downcore$d_val, g=10)
@@ -1701,14 +1701,14 @@ new_colors<-c("#556B2F", "#A2CD5A","#CCCCCC","#B0E2FF", "#36648B")
 
         
 # toggle on/off with hash tags
-#pdf(paste0("Figures/SupplementaryFigures/",Sys.Date(),"_iCAMP_qpen_sediment_characteristics_intracore.pdf"), height=3.5, width=6)
-pdf(paste0("Figures/SupplementaryFigures/",Sys.Date(),"_iCAMP_qpen_sediment_characteristics_intercore.pdf"), height=3.5, width=6)
+pdf(paste0("Figures/SupplementaryFigures/",Sys.Date(),"_iCAMP_qpen_sediment_characteristics_intracore.pdf"), height=3.5, width=6)
+#pdf(paste0("Figures/SupplementaryFigures/",Sys.Date(),"_iCAMP_qpen_sediment_characteristics_intercore.pdf"), height=3.5, width=6)
 ggplt
 dev.off()
 
 
-#print("intra-core") # toggle on/off with hash tags
-print("inter-core") # toggle on/off with hash tags
+print("intra-core") # toggle on/off with hash tags
+#print("inter-core") # toggle on/off with hash tags
 unique(tally$n)
 
 # [1] "intra-core"
@@ -1719,6 +1719,7 @@ unique(tally$n)
 ```
 
 GAMs
+Toggle on "intra-core" in previous chunk
 ```{r}
 model_results<-data.frame(process=NULL, devex=NULL, p=NULL)
 
@@ -1749,10 +1750,18 @@ dev.off()
 
 Sys.Date()
 round(mean(model_results$devex),digits=4)
-# [1] "2024-01-22"
-# [1] 0.6282
-```
+# [1] "2024-01-30"
+# [1] 0.6888
 
+model_results$p<-round(model_results$p, digits=3)
+model_results
+```
+                   process devex     p
+1     A_Variable selection 0.582 0.010
+2  B_Homogeneous selection 0.818 0.001
+3                  C_Drift 0.488 0.075
+4 D_Homogenizing dispersal 0.731 0.011
+5   E_Dispersal limitation 0.825 0.000
 
 
 
@@ -1855,7 +1864,7 @@ beep()
 
 ### b. Add variables in with vectors
 ```{r}
-load("2024-01-23_NMDS.Rdata")
+load("IntermediateAnalysisFiles/2024-01-23_NMDS.Rdata")
 
 ord.fit <- envfit(ord_baseR ~ depth + max_lake_depth + water_sample_t_bot +   water_sample_ph_bot + water_sample_do_bot + water_sample_t_surf + water_sample_ph_surf + water_sample_do_surf + c_perc  + n_perc  + d_13_c,  data = sd_sed,  perm = 1000, na.rm = TRUE)
 ord.fit[["vectors"]][["arrows"]][1,1]<-(ord.fit[["vectors"]][["arrows"]][1,1]*(-1))
