@@ -56,6 +56,9 @@ other attached packages:
 [33] readr_2.1.5         tidyr_1.3.0         tibble_3.2.1        ggplot2_3.4.4      
 [37] tidyverse_2.0.0 
 
+other attached packages:
+[1] iCAMP_1.5.12
+
 # Part III: Data Analysis
 
 ## 0. Load data
