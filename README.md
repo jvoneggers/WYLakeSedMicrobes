@@ -6,4 +6,4 @@ This repository contains the data and data analysis used for:
 
 Jordan Von Eggers, Nathan I. Wisnoski, John W. Calder, Eric Capo, Dulcinea Groff, Amy Krist, and Bryan Shuman. 
 
-This manuscript is currently under review at Environmental Microbiology as of Jan 19, 2024.
+This manuscript is accepted  at Environmental Microbiology as of March 2024.
