@@ -2994,7 +2994,7 @@ shared$geo_dist_km<-shared$geo_dist/1000
 
 write.csv(shared, paste0(Sys.Date(), "_sharedESVs.csv"))
 ```
-### ii. Plot SFig. X shared ESVs
+### ii. Plot SFig - shared ESVs
 ```{r}
 comps_backup<-read.csv("2024-01-29_sharedESVs.csv",header=T,row.names=1)
 comps_backup$percent<-comps_backup$percent*100
