@@ -1137,7 +1137,7 @@ signif(mean(full_output[full_output$dist=="Environmental dissimilarity" & full_o
 # [1] 21.1
 ```
 
-Note - extremely close but not the exactly the same as if you looked at distance (km) and d_val_groups 0 and 1 (could be rounding)
+
 
 
 
